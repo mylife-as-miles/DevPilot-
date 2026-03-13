@@ -1,3 +1,8 @@
+import { startMockOrchestrator } from "./lib/orchestrator";
+import { useLiveQuery } from "dexie-react-hooks";
+import { taskService } from "./lib/services";
+import { initializeDb } from "./lib/seeds";
+import { Task } from "./types";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -71,13 +76,27 @@ const Hero = () => (
   </div>
 );
 
-const Tabs = () => (
-  <div className="flex items-center border-b border-border-subtle mb-8 gap-8">
-    <button className="pb-4 text-sm font-semibold text-primary border-b-2 border-primary">Tasks</button>
-    <button className="pb-4 text-sm font-medium text-slate-500 hover:text-slate-300 transition-colors">Code reviews</button>
-    <button className="pb-4 text-sm font-medium text-slate-500 hover:text-slate-300 transition-colors">Archive</button>
-  </div>
-);
+const Tabs = ({ activeTab, onTabChange }: { activeTab: Task['category'], onTabChange: (tab: Task['category']) => void }) => {
+  const tabs: { id: Task['category'], label: string }[] = [
+    { id: 'tasks', label: 'Tasks' },
+    { id: 'code_reviews', label: 'Code reviews' },
+    { id: 'archive', label: 'Archive' }
+  ];
+
+  return (
+    <div className="flex items-center border-b border-border-subtle mb-8 gap-8">
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => onTabChange(tab.id)}
+          className={`pb-4 text-sm transition-colors ${activeTab === tab.id ? 'font-semibold text-primary border-b-2 border-primary' : 'font-medium text-slate-500 hover:text-slate-300'}`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+};
 
 interface TaskProps {
   id?: string;
@@ -133,16 +152,39 @@ const TaskItem = ({ title, status, time, branch, additions, deletions, onClick }
   );
 };
 
-const TaskList = ({ onSelectTask }: { onSelectTask: (id: string) => void }) => {
+
+const formatTimeAgo = (timestamp: number) => {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(timestamp);
+};
+
+const getTaskGroup = (timestamp: number) => {
+  const days = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
+  return days <= 7 ? "Last 7 Days" : "Older";
+};
+
+const TaskList = ({ onSelectTask, activeTab }: { onSelectTask: (id: string) => void, activeTab: Task['category'] }) => {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const allTasks = [
-    { id: '1', title: "Fix layout for top matches on mobile", status: "MERGED", time: "2h ago", branch: "DevPilot/main", additions: 52, deletions: 9, group: "Last 7 Days" },
-    { id: '2', title: "Refactor authentication middleware", status: "RUNNING", time: "5h ago", branch: "DevPilot/auth-fix", additions: 124, deletions: 31, group: "Last 7 Days" },
-    { id: '3', title: "Update dependency: tailwindcss v3.4", status: "MERGED", time: "3d ago", branch: "DevPilot/main", additions: 12, deletions: 12, group: "Last 7 Days" },
-    { id: '4', title: "Implement Redis caching for API endpoints", status: "CLOSED", time: "Oct 12, 2023", branch: "DevPilot/cache-layer", additions: 284, deletions: 0, group: "Older" },
-    { id: '5', title: "Hotfix: SSL Certificate renewal automation", status: "MERGED", time: "Sep 28, 2023", branch: "DevPilot/main", additions: 45, deletions: 2, group: "Older" },
-  ];
+  const dbTasks = useLiveQuery(() => taskService.getTasksByCategory(activeTab), [activeTab]);
+
+  const allTasks = (dbTasks || []).map(t => ({
+    id: t.id,
+    title: t.title,
+    status: t.status.toUpperCase(),
+    time: formatTimeAgo(t.createdAt),
+    branch: `${t.repo}/${t.branch}`,
+    additions: t.plusCount,
+    deletions: t.minusCount,
+    group: getTaskGroup(t.createdAt)
+  }));
 
   const filteredTasks = allTasks.filter(task => 
     task.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -218,10 +260,38 @@ const FloatingIndicator = () => (
   </div>
 );
 
-const TaskDetail = ({ onBack }: { onBack: () => void }) => {
+const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) => {
   const [isAgentOpen, setIsAgentOpen] = useState(true);
   const [isBrowserOpen, setIsBrowserOpen] = useState(true);
   const [isCodeOpen, setIsCodeOpen] = useState(true);
+  const [codeTab, setCodeTab] = useState<'diff' | 'log' | 'terminal'>('diff');
+
+  const task = useLiveQuery(() => taskService.getTaskById(taskId), [taskId]);
+  const messages = useLiveQuery(() => taskService.getMessagesByTaskId(taskId), [taskId]);
+  const run = useLiveQuery(() => taskService.getActiveAgentRun(taskId), [taskId]);
+  const currentArtifact = useLiveQuery(() => taskService.getArtifactsByTaskIdAndType(taskId, codeTab), [taskId, codeTab]);
+
+  useEffect(() => {
+    if (task && task.status === 'running') {
+      startMockOrchestrator(taskId);
+    }
+  }, [task?.status, taskId]);
+
+  const handleApprove = async () => {
+    await taskService.appendAgentMessage({
+      taskId,
+      sender: 'system',
+      content: 'Changes approved and merged.',
+      kind: 'success',
+      timestamp: Date.now()
+    });
+    await taskService.updateTaskStatus(taskId, 'merged');
+    if (run) {
+      await taskService.updateAgentRunStep(run.id, 'Completed', 'completed');
+    }
+  };
+
+  if (!task) return <div className="p-8 text-center text-slate-500 flex items-center justify-center h-screen bg-background-dark font-display"><span className="material-symbols-outlined animate-spin mr-2">sync</span>Loading task workspace...</div>;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background-dark text-slate-100 font-display selection:bg-primary/30">
@@ -230,25 +300,29 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 text-sm text-slate-400 cursor-pointer hover:text-slate-300" onClick={onBack}>
             <span className="material-symbols-outlined text-primary text-xl mr-2">rocket_launch</span>
-            <span>Project-X</span>
+            <span>{task.repo}</span>
             <span>/</span>
-            <span>Tasks</span>
+            <span className="capitalize">{task.category.replace('_', ' ')}</span>
             <span>/</span>
-            <span className="font-semibold text-white">#842</span>
+            <span className="font-semibold text-white">#{task.id.slice(0, 4)}</span>
           </div>
-          <h1 className="text-base font-bold text-white ml-2">Fix layout for top matches</h1>
+          <h1 className="text-base font-bold text-white ml-2">{task.title}</h1>
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] uppercase font-bold tracking-wider">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-            </span>
-            Running
+            {task.status === 'running' ? (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+            ) : task.status === 'merged' ? (
+              <span className="material-symbols-outlined text-[12px] text-green-500">check_circle</span>
+            ) : null}
+            {task.status}
           </div>
           <div className="h-4 w-px bg-border-dark mx-2"></div>
           <div className="flex items-center gap-3 text-xs font-mono text-slate-500">
             <div className="flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">account_tree</span>
-              <span>fix/top-matches-layout</span>
+              <span>{task.branch}</span>
             </div>
           </div>
         </div>
@@ -257,7 +331,11 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
             <span className="material-symbols-outlined text-primary text-lg">visibility</span>
             <span>View PR</span>
           </button>
-          <button className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-primary text-background-dark text-sm font-bold hover:bg-primary/90 transition-colors">
+          <button
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-primary text-background-dark text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleApprove}
+            disabled={task.status !== 'running'}
+          >
             <span>Approve & Commit</span>
           </button>
           <div className="size-8 rounded-full bg-surface-dark border border-border-dark flex items-center justify-center overflow-hidden">
@@ -290,35 +368,26 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
           {isAgentOpen && (
             <>
               <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                {/* Message 1 */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="size-6 rounded bg-primary/20 text-primary flex items-center justify-center">
-                      <span className="material-symbols-outlined text-sm">smart_toy</span>
+                {(messages || []).map(msg => (
+                  <div key={msg.id} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`size-6 rounded flex items-center justify-center ${msg.kind === 'success' ? 'bg-green-500/20 text-green-500' : msg.kind === 'warning' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-primary/20 text-primary'}`}>
+                        <span className="material-symbols-outlined text-sm">{msg.sender === 'system' ? 'dns' : 'smart_toy'}</span>
+                      </div>
+                      <span className="text-xs font-bold capitalize">{msg.sender}</span>
+                      <span className="text-[10px] text-slate-500">{new Date(msg.timestamp).toLocaleTimeString()}</span>
                     </div>
-                    <span className="text-xs font-bold">DevPilot</span>
-                  </div>
-                  <div className="p-3 rounded-lg bg-surface-dark border border-border-dark text-sm leading-relaxed text-slate-300">
-                    I've detected a layout overflow in the Top Matches list on viewport widths below 375px.
-                  </div>
-                </div>
-                {/* Message 2 */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="size-6 rounded bg-primary/20 text-primary flex items-center justify-center">
-                      <span className="material-symbols-outlined text-sm">smart_toy</span>
+                    <div className={`p-3 rounded-lg border text-sm leading-relaxed ${msg.kind === 'success' ? 'bg-green-900/10 border-green-500/20 text-green-200' : msg.kind === 'warning' ? 'bg-yellow-900/10 border-yellow-500/20 text-yellow-200' : 'bg-surface-dark border-border-dark text-slate-300'}`}>
+                      {msg.content}
                     </div>
-                    <span className="text-xs font-bold">DevPilot</span>
                   </div>
-                  <div className="p-3 rounded-lg bg-surface-dark border border-border-dark text-sm leading-relaxed text-slate-300">
-                    Proposing a button-style trigger to save space and shifting to a horizontal scroll layout for cards.
+                ))}
+                {run?.status === 'running' && (
+                  <div className="flex items-center gap-3 py-2 px-1">
+                    <span className="material-symbols-outlined text-primary animate-pulse">sync</span>
+                    <span className="text-xs text-slate-400">{run.currentStep}</span>
                   </div>
-                </div>
-                {/* Status Update */}
-                <div className="flex items-center gap-3 py-2 px-1">
-                  <span className="material-symbols-outlined text-primary animate-pulse">sync</span>
-                  <span className="text-xs text-slate-400">Modifying <code className="bg-surface-dark px-1 py-0.5 rounded">MomentsGrid.tsx</code>...</span>
-                </div>
+                )}
               </div>
               <div className="p-4 border-t border-border-dark">
                 <div className="relative">
@@ -433,19 +502,18 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
           <section className={`${isCodeOpen ? 'flex-1' : 'w-12 flex-none'} flex flex-col bg-background-dark transition-all duration-300`}>
             <div 
               className="flex border-b border-border-dark bg-surface-dark/20 cursor-pointer hover:bg-surface-dark/40"
-              onClick={() => setIsCodeOpen(!isCodeOpen)}
             >
               {isCodeOpen ? (
                 <>
-                  <button className="px-6 py-3 text-sm font-bold border-b-2 border-primary text-white">Diff</button>
-                  <button className="px-6 py-3 text-sm font-medium text-slate-500 hover:text-white">Logs</button>
-                  <button className="px-6 py-3 text-sm font-medium text-slate-500 hover:text-white">Terminal</button>
-                  <div className="flex-1 flex justify-end items-center pr-4">
+                  <button onClick={(e) => { e.stopPropagation(); setCodeTab('diff'); }} className={`px-6 py-3 text-sm ${codeTab === 'diff' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Diff</button>
+                  <button onClick={(e) => { e.stopPropagation(); setCodeTab('log'); }} className={`px-6 py-3 text-sm ${codeTab === 'log' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Logs</button>
+                  <button onClick={(e) => { e.stopPropagation(); setCodeTab('terminal'); }} className={`px-6 py-3 text-sm ${codeTab === 'terminal' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Terminal</button>
+                  <div className="flex-1 flex justify-end items-center pr-4" onClick={() => setIsCodeOpen(false)}>
                     <span className="material-symbols-outlined text-slate-500 text-sm">keyboard_double_arrow_right</span>
                   </div>
                 </>
               ) : (
-                <div className="flex flex-col items-center gap-4 w-full py-3">
+                <div className="flex flex-col items-center gap-4 w-full py-3" onClick={() => setIsCodeOpen(true)}>
                   <span className="material-symbols-outlined text-slate-500 text-sm">keyboard_double_arrow_left</span>
                   <span className="material-symbols-outlined text-slate-400 text-sm">code</span>
                 </div>
@@ -454,53 +522,49 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
             
             {isCodeOpen && (
               <>
-                <div className="flex-1 overflow-auto p-4 code-font text-xs">
-                  <div className="flex items-center gap-2 mb-4 text-slate-500">
-                    <span className="material-symbols-outlined text-sm">description</span>
-                    <span>components/home/MomentsGrid.tsx</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">12</span>
-                      <span className="text-slate-300 pl-2">  return (</span>
+                <div className="flex-1 overflow-auto p-4 code-font text-xs whitespace-pre-wrap font-mono text-slate-300">
+                  {currentArtifact ? (
+                    codeTab === 'diff' ? (
+                      <div>
+                        {currentArtifact.content.split('\n').map((line, i) => {
+                          const isAdd = line.startsWith('+');
+                          const isSub = line.startsWith('-');
+                          const isHeader = line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++');
+
+                          let lineClass = "flex hover:bg-white/5 transition-colors group";
+                          let numClass = "w-12 text-right pr-4 text-slate-600 select-none";
+                          let textClass = "pl-2";
+
+                          if (isHeader) {
+                            textClass = "pl-2 text-slate-500 font-bold";
+                          } else if (isAdd && !line.startsWith('+++')) {
+                            lineClass = "flex bg-primary/20 border-l-2 border-primary";
+                            numClass = "w-12 text-right pr-4 text-primary/50 select-none";
+                            textClass = "pl-2 text-slate-100 font-medium";
+                          } else if (isSub && !line.startsWith('---')) {
+                            lineClass = "flex bg-red-900/20 border-l-2 border-red-500";
+                            numClass = "w-12 text-right pr-4 text-red-500/50 select-none";
+                            textClass = "pl-2 text-red-200 font-medium";
+                          }
+
+                          return (
+                            <div key={i} className={lineClass}>
+                              <span className={numClass}>{i + 1}</span>
+                              <span className={textClass}>{line}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="font-mono text-slate-300 whitespace-pre">
+                        {currentArtifact.content}
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-slate-500 italic">
+                      No {codeTab} artifacts available yet...
                     </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">13</span>
-                      <span className="text-slate-300 pl-2">    &lt;div className="grid grid-cols-2"&gt;</span>
-                    </div>
-                    <div className="flex bg-red-900/20 border-l-2 border-red-500">
-                      <span className="w-12 text-right pr-4 text-red-500/50 select-none">- 14</span>
-                      <span className="text-red-200 pl-2 font-medium">      &lt;div className="flex flex-wrap gap-4"&gt;</span>
-                    </div>
-                    <div className="flex bg-primary/20 border-l-2 border-primary">
-                      <span className="w-12 text-right pr-4 text-primary/50 select-none">+ 14</span>
-                      <span className="text-slate-100 pl-2 font-medium">      &lt;div className="flex overflow-x-auto gap-4 scrollbar-hide"&gt;</span>
-                    </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">15</span>
-                      <span className="text-slate-300 pl-2">        {'{matches.map(match => ('}</span>
-                    </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">16</span>
-                      <span className="text-slate-300 pl-2">          &lt;MatchCard key={'{match.id}'} data={'{match}'} /&gt;</span>
-                    </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">17</span>
-                      <span className="text-slate-300 pl-2">        {'))}'}</span>
-                    </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">18</span>
-                      <span className="text-slate-300 pl-2">      &lt;/div&gt;</span>
-                    </div>
-                    <div className="flex bg-primary/20 border-l-2 border-primary">
-                      <span className="w-12 text-right pr-4 text-primary/50 select-none">+ 19</span>
-                      <span className="text-slate-100 pl-2 font-medium">      &lt;ScrollIndicator active={'{hasScroll}'} /&gt;</span>
-                    </div>
-                    <div className="flex hover:bg-white/5 transition-colors group">
-                      <span className="w-12 text-right pr-4 text-slate-600 select-none">20</span>
-                      <span className="text-slate-300 pl-2">    &lt;/div&gt;</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
                 <div className="p-3 border-t border-border-dark flex items-center justify-between text-[10px] text-slate-500 font-mono">
                   <div className="flex gap-4">
@@ -508,8 +572,8 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
                     <span>TypeScript JSX</span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="text-green-500">2 insertions(+)</span>
-                    <span className="text-red-500">1 deletion(-)</span>
+                    <span className="text-green-500">{task.plusCount} insertions(+)</span>
+                    <span className="text-red-500">{task.minusCount} deletion(-)</span>
                   </div>
                 </div>
               </>
@@ -526,9 +590,16 @@ const TaskDetail = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
+import { useEffect } from 'react';
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Task['category']>('tasks');
+
+  useEffect(() => {
+    initializeDb();
+  }, []);
 
   const navigate = (page: string, taskId?: string) => {
     setCurrentPage(page);
@@ -536,7 +607,7 @@ export default function App() {
   };
 
   if (currentPage === 'task_detail') {
-    return <TaskDetail onBack={() => navigate('dashboard')} />;
+    return <TaskDetail taskId={selectedTask!} onBack={() => navigate('dashboard')} />;
   }
 
   if (currentPage === 'documentation') {
@@ -568,8 +639,8 @@ export default function App() {
       <Header navigate={navigate} />
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-12">
         <Hero />
-        <Tabs />
-        <TaskList onSelectTask={(id) => navigate('task_detail', id)} />
+        <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <TaskList activeTab={activeTab} onSelectTask={(id) => navigate('task_detail', id)} />
         <Footer navigate={navigate} />
       </main>
       <FloatingIndicator />
