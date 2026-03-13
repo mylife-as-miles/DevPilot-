@@ -1,4 +1,6 @@
 import { startMockOrchestrator } from "./lib/orchestrator";
+import { runUiInspectionWorkflow } from "./lib/workflows/uiInspection.workflow";
+import { config } from "./lib/config/env";
 import { useLiveQuery } from "dexie-react-hooks";
 import { taskService } from "./lib/services";
 import { runService } from "./lib/services/run.service";
@@ -266,7 +268,7 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
   const [isAgentOpen, setIsAgentOpen] = useState(true);
   const [isBrowserOpen, setIsBrowserOpen] = useState(true);
   const [isCodeOpen, setIsCodeOpen] = useState(true);
-  const [codeTab, setCodeTab] = useState<'diff' | 'log' | 'terminal'>('diff');
+  const [codeTab, setCodeTab] = useState<'diff' | 'log' | 'terminal' | 'vision_analysis'>('diff');
 
   const task = useLiveQuery(() => taskService.getTaskById(taskId), [taskId]);
   const messages = useLiveQuery(() => taskService.getMessagesByTaskId(taskId), [taskId]);
@@ -277,9 +279,13 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
 
   useEffect(() => {
     if (task && task.status === 'running') {
-      startMockOrchestrator(taskId);
+      if (config.liveMode && task.inspectionStatus === 'idle') {
+        runUiInspectionWorkflow(taskId);
+      } else {
+        startMockOrchestrator(taskId);
+      }
     }
-  }, [task?.status, taskId]);
+  }, [task?.status, taskId, task?.inspectionStatus]);
 
   const handleApprove = async () => {
     await taskService.appendAgentMessage({
@@ -587,7 +593,8 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
                   <button onClick={(e) => { e.stopPropagation(); setCodeTab('diff'); }} className={`px-6 py-3 text-sm ${codeTab === 'diff' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Diff</button>
                   <button onClick={(e) => { e.stopPropagation(); setCodeTab('log'); }} className={`px-6 py-3 text-sm ${codeTab === 'log' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Logs</button>
                   <button onClick={(e) => { e.stopPropagation(); setCodeTab('terminal'); }} className={`px-6 py-3 text-sm ${codeTab === 'terminal' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Terminal</button>
-                  <div className="flex-1 flex justify-end items-center pr-4" onClick={() => setIsCodeOpen(false)}>
+                  <button onClick={(e) => { e.stopPropagation(); setCodeTab('vision_analysis'); }} className={`px-6 py-3 text-sm ${codeTab === 'vision_analysis' ? 'font-bold border-b-2 border-primary text-white' : 'font-medium text-slate-500 hover:text-white'}`}>Vision</button>
+                                          <div className="flex-1 flex justify-end items-center pr-4" onClick={() => setIsCodeOpen(false)}>
                     <span className="material-symbols-outlined text-slate-500 text-sm">keyboard_double_arrow_right</span>
                   </div>
                 </>
@@ -633,6 +640,17 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
                             </div>
                           );
                         })}
+                      </div>
+                    ) : codeTab === 'vision_analysis' ? (
+                      <div className="font-mono text-slate-300 whitespace-pre-wrap">
+                        {(() => {
+                          try {
+                            const data = JSON.parse(currentArtifact.content);
+                            return `### Vision Analysis Results ###\n\nIssue Type: ${data.issueType}\nSeverity: ${data.severity}\nSuspected Component: ${data.suspectedComponent}\n\nSummary:\n${data.summary}\n\nExplanation:\n${data.explanation}\n\nRecommended Fix:\n${data.recommendedFix}\n\nConfidence: ${data.confidence}`;
+                          } catch (e) {
+                            return currentArtifact.content;
+                          }
+                        })()}
                       </div>
                     ) : (
                       <div className="font-mono text-slate-300 whitespace-pre">

@@ -9,6 +9,12 @@ export interface Task {
   updatedAt: number;
   plusCount: number;
   minusCount: number;
+  targetUrl?: string;
+  viewportPreset?: "desktop" | "tablet" | "mobile";
+  viewportWidth?: number;
+  viewportHeight?: number;
+  lastInspectionAt?: number;
+  inspectionStatus?: "idle" | "queued" | "running" | "completed" | "failed";
 }
 
 export interface AgentMessage {
@@ -23,7 +29,7 @@ export interface AgentMessage {
 export interface TaskArtifact {
   id: string;
   taskId: string;
-  type: "diff" | "log" | "terminal";
+  type: "diff" | "log" | "terminal" | "vision_analysis" | "screenshot";
   content: string;
   timestamp: number;
 }

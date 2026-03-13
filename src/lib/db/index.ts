@@ -38,6 +38,20 @@ export class DevPilotDB extends Dexie {
         run.mode = run.mode ?? 'mock';
       });
     });
+    this.version(3).stores({
+      tasks: 'id, category, status, createdAt',
+      agentMessages: 'id, taskId, timestamp',
+      taskArtifacts: 'id, [taskId+type]',
+      memories: 'id, scope, createdAt',
+      agentRuns: 'id, taskId, status',
+      agentEvents: 'id, taskId, timestamp',
+      runSteps: 'id, runId, taskId, order',
+      taskMemoryHits: 'id, taskId, memoryId'
+    }).upgrade(tx => {
+      return tx.table('tasks').toCollection().modify(task => {
+        task.inspectionStatus = task.inspectionStatus || "idle";
+      });
+    });
   }
 }
 

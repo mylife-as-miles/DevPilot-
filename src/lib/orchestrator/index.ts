@@ -10,6 +10,7 @@ export const startMockOrchestrator = async (taskId: string) => {
 
   const run = await taskService.getActiveAgentRun(taskId);
   if (!run || run.status !== 'running') return;
+  await taskService.updateTask(taskId, { inspectionStatus: 'completed' });
 
   // Initialize workflow steps
   const workflowSteps = [

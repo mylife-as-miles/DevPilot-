@@ -27,6 +27,9 @@ export const seedTasks: Task[] = [
     updatedAt: Date.now() - 1000 * 60 * 60 * 5,
     plusCount: 124,
     minusCount: 31,
+    targetUrl: 'http://localhost:3000/dashboard/matches',
+    viewportPreset: 'desktop',
+    inspectionStatus: 'idle',
   },
   {
     id: crypto.randomUUID(),
