@@ -3,14 +3,17 @@ export const getEnvVar = (key: string, defaultValue: string = ''): string => {
     return process.env[key] as string;
   }
   // @ts-ignore - Vite compatibility
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
     // @ts-ignore
-    return import.meta.env[key] as string;
+    return (import.meta as any).env[key] as string;
   }
   return defaultValue;
 };
 
 export const config = {
+  liveDuoExecution: (import.meta as any).env.VITE_LIVE_DUO_EXECUTION === 'true',
+  gitlabDuoApiUrl: (import.meta as any).env.VITE_GITLAB_DUO_API_URL || 'https://gitlab.com/api/v4',
+  gitlabDuoToken: (import.meta as any).env.VITE_GITLAB_DUO_TOKEN || '',
   liveMode: getEnvVar('VITE_LIVE_MODE', 'false') === 'true',
   liveGitlabMode: getEnvVar('VITE_LIVE_GITLAB_MODE', 'false') === 'true',
   targetAppBaseUrl: getEnvVar('VITE_TARGET_APP_BASE_URL', 'http://localhost:3000'),

@@ -2,6 +2,7 @@ import { taskService, patchProposalService } from '../services';
 import { runService } from '../services/run.service';
 import { gitlabRepositoryAdapter } from '../adapters/gitlabRepository.adapter';
 import { runPostFixVerificationWorkflow } from './postFixVerification.workflow';
+import { gitlabDuoAdapter } from '../adapters/gitlabDuo.adapter';
 
 export const runVerificationPreparationWorkflow = async (taskId: string, proposalId: string) => {
   const task = await taskService.getTaskById(taskId);
@@ -10,6 +11,9 @@ export const runVerificationPreparationWorkflow = async (taskId: string, proposa
 
   // 1. Mark workflow started
   await taskService.updateTask(taskId, { codeFixStatus: 'applied' });
+  // Update GitLab Duo flow state
+  await gitlabDuoAdapter.invokeAgent(taskId, 'handoff_to_gitlab', 'system');
+
   await taskService.appendAgentMessage({
     taskId,
     sender: 'system',

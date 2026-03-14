@@ -1,57 +1,76 @@
 import { db } from '../db';
-import { GitLabDuoFlowRun, AgentRole, AgentType } from '../../types';
+import { DuoFlowRun, DuoAgentInvocation, DuoAgentRole, DuoFlowStepKey } from '../../types';
 
 export const gitlabDuoService = {
-  async getFlowRunByTaskId(taskId: string): Promise<GitLabDuoFlowRun | undefined> {
-    return db.gitLabDuoFlowRuns.where('taskId').equals(taskId).first();
+  async getFlowRunByTaskId(taskId: string): Promise<DuoFlowRun | undefined> {
+    return db.duoFlowRuns.where('taskId').equals(taskId).first();
   },
 
   async createOrUpdateFlowRun(
-    flowRun: Partial<GitLabDuoFlowRun> & { taskId: string; flowRunId: string }
+    flowRun: Partial<DuoFlowRun> & { taskId: string; flowRunId: string; flowDefinitionId: string }
   ): Promise<string> {
     const existing = await this.getFlowRunByTaskId(flowRun.taskId);
     if (existing) {
-      await db.gitLabDuoFlowRuns.update(existing.id, {
-        ...flowRun,
-        updatedAt: Date.now()
-      });
+      const updatedRun = { ...existing, ...flowRun, updatedAt: Date.now() };
+      await db.duoFlowRuns.update(existing.id, updatedRun);
       return existing.id;
     } else {
-      const newFlowRun: GitLabDuoFlowRun = {
+      const newFlowRun: DuoFlowRun = {
         id: crypto.randomUUID(),
         taskId: flowRun.taskId,
-        flowRunId: flowRun.flowRunId!,
-        flowName: flowRun.flowName || 'DevPilot Standard Fix Flow',
-        flowStepKey: flowRun.flowStepKey || 'inspection',
-        agentRole: flowRun.agentRole || 'ui_inspector',
-        agentType: flowRun.agentType || 'custom',
-        agentInvocationId: flowRun.agentInvocationId || crypto.randomUUID(),
-        handoffState: flowRun.handoffState || 'pending',
-        approvalCheckpoint: flowRun.approvalCheckpoint || false,
+        flowRunId: flowRun.flowRunId,
+        flowDefinitionId: flowRun.flowDefinitionId,
+        currentStepKey: flowRun.currentStepKey || 'inspect_ui_issue',
         status: flowRun.status || 'running',
-        createdAt: Date.now(),
+        startedAt: Date.now(),
         updatedAt: Date.now(),
         ...flowRun
-      } as GitLabDuoFlowRun;
-      await db.gitLabDuoFlowRuns.add(newFlowRun);
+      } as DuoFlowRun;
+      await db.duoFlowRuns.add(newFlowRun);
       return newFlowRun.id;
     }
   },
 
   async updateFlowStep(
     taskId: string,
-    stepKey: string,
-    agentRole: AgentRole,
-    status: GitLabDuoFlowRun['status'] = 'running'
+    stepKey: DuoFlowStepKey,
+    status: DuoFlowRun['status'] = 'running'
   ) {
       const existing = await this.getFlowRunByTaskId(taskId);
       if(existing) {
-          await db.gitLabDuoFlowRuns.update(existing.id, {
-              flowStepKey: stepKey,
-              agentRole: agentRole,
+          await db.duoFlowRuns.update(existing.id, {
+              currentStepKey: stepKey,
               status,
               updatedAt: Date.now()
           })
       }
+  },
+
+  async createAgentInvocation(
+      flowRunId: string,
+      taskId: string,
+      agentRole: DuoAgentRole,
+      stepKey: DuoFlowStepKey,
+      metadata: Record<string, any> = {}
+  ): Promise<string> {
+      const id = crypto.randomUUID();
+      await db.duoAgentInvocations.add({
+          id,
+          flowRunId,
+          taskId,
+          agentRole,
+          stepKey,
+          invocationStatus: 'running',
+          metadata: JSON.stringify(metadata),
+          startedAt: Date.now()
+      });
+      return id;
+  },
+
+  async completeAgentInvocation(id: string, success: boolean) {
+      await db.duoAgentInvocations.update(id, {
+          invocationStatus: success ? 'completed' : 'failed',
+          completedAt: Date.now()
+      });
   }
 };

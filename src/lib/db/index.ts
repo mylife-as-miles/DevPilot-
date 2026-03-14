@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit, PatchProposal, PatchFile, VerificationPlan, VerificationResult, VerificationEvidence, GitLabDuoFlowRun } from '../../types';
+import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit, PatchProposal, PatchFile, VerificationPlan, VerificationResult, VerificationEvidence, DuoFlowRun, DuoAgentInvocation } from '../../types';
 
 export class DevPilotDB extends Dexie {
   tasks!: Table<Task>;
@@ -15,7 +15,8 @@ export class DevPilotDB extends Dexie {
   verificationPlans!: Table<VerificationPlan>;
   verificationResults!: Table<VerificationResult>;
   verificationEvidences!: Table<VerificationEvidence>;
-  gitLabDuoFlowRuns!: Table<GitLabDuoFlowRun>;
+  duoFlowRuns!: Table<DuoFlowRun>;
+  duoAgentInvocations!: Table<DuoAgentInvocation>;
 
   constructor() {
     super('DevPilotDB');
@@ -42,7 +43,7 @@ export class DevPilotDB extends Dexie {
       });
     });
 
-    this.version(6).stores({
+    this.version(7).stores({
       tasks: 'id, category, status, createdAt',
       agentMessages: 'id, taskId, timestamp',
       taskArtifacts: 'id, taskId, type',
@@ -56,7 +57,8 @@ export class DevPilotDB extends Dexie {
       verificationPlans: 'id, taskId, proposalId',
       verificationResults: 'id, taskId, proposalId, status',
       verificationEvidences: 'id, verificationResultId, taskId, type',
-      gitLabDuoFlowRuns: 'id, taskId, flowRunId, agentRole, status, createdAt'
+      duoFlowRuns: 'id, taskId, flowRunId, flowDefinitionId, status, createdAt',
+      duoAgentInvocations: 'id, flowRunId, taskId, agentRole, stepKey, invocationStatus'
     }).upgrade(tx => {
       return tx.table('agentRuns').toCollection().modify(run => {
         run.progress = run.progress ?? 0;
