@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit } from '../../types';
+import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit, PatchProposal, PatchFile, VerificationPlan } from '../../types';
 
 export class DevPilotDB extends Dexie {
   tasks!: Table<Task>;
@@ -8,8 +8,11 @@ export class DevPilotDB extends Dexie {
   memories!: Table<Memory>;
   agentRuns!: Table<AgentRun>;
   agentEvents!: Table<AgentEvent>;
-  runSteps!: Table<RunStep>;
+    runSteps!: Table<RunStep>;
   taskMemoryHits!: Table<TaskMemoryHit>;
+  patchProposals!: Table<PatchProposal>;
+  patchFiles!: Table<PatchFile>;
+  verificationPlans!: Table<VerificationPlan>;
 
   constructor() {
     super('DevPilotDB');
@@ -50,6 +53,23 @@ export class DevPilotDB extends Dexie {
     }).upgrade(tx => {
       return tx.table('tasks').toCollection().modify(task => {
         task.inspectionStatus = task.inspectionStatus || "idle";
+      });
+    });
+    this.version(4).stores({
+      tasks: 'id, category, status, createdAt',
+      agentMessages: 'id, taskId, timestamp',
+      taskArtifacts: 'id, [taskId+type]',
+      memories: 'id, scope, createdAt',
+      agentRuns: 'id, taskId, status',
+      agentEvents: 'id, taskId, timestamp',
+      runSteps: 'id, runId, taskId, order',
+      taskMemoryHits: 'id, taskId, memoryId',
+      patchProposals: 'id, taskId, status',
+      patchFiles: 'id, proposalId, taskId',
+      verificationPlans: 'id, taskId, proposalId'
+    }).upgrade(tx => {
+      return tx.table('tasks').toCollection().modify(task => {
+        task.codeFixStatus = task.codeFixStatus || "idle";
       });
     });
   }

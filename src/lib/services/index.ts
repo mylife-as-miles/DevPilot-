@@ -35,6 +35,11 @@ export const taskService = {
     return await db.agentMessages.add(newMessage) as string;
   },
 
+
+  updateTask: async (taskId: string, data: Partial<Task>): Promise<number> => {
+    return await db.tasks.update(taskId, { ...data, updatedAt: Date.now() });
+  },
+
   updateTaskStatus: async (taskId: string, status: Task['status']): Promise<number> => {
     return await db.tasks.update(taskId, { status, updatedAt: Date.now() });
   },
@@ -56,3 +61,4 @@ export const taskService = {
     return await db.agentRuns.update(runId, updateData);
   }
 };
+export * from './patchProposal.service';

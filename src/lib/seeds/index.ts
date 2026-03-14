@@ -30,6 +30,10 @@ export const seedTasks: Task[] = [
     targetUrl: 'http://localhost:3000/dashboard/matches',
     viewportPreset: 'desktop',
     inspectionStatus: 'idle',
+    codeFixStatus: 'idle',
+    repoName: 'project-x',
+    relatedRoute: '/dashboard/matches',
+    candidateFiles: ['src/components/home/MomentsGrid.tsx', 'src/components/home/TopMatchesCard.tsx'],
   },
   {
     id: crypto.randomUUID(),

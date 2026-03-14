@@ -15,6 +15,13 @@ export interface Task {
   viewportHeight?: number;
   lastInspectionAt?: number;
   inspectionStatus?: "idle" | "queued" | "running" | "completed" | "failed";
+  codeFixStatus?: "idle" | "running" | "ready_for_review" | "approved" | "applied" | "failed";
+  repoName?: string;
+  repoPath?: string;
+  defaultBranch?: string;
+  candidateFiles?: string[];
+  componentHints?: string[];
+  relatedRoute?: string;
 }
 
 export interface AgentMessage {
@@ -99,4 +106,54 @@ export interface TaskMemoryHit {
   score: number;
   reason: string;
   createdAt: number;
+}
+
+
+export interface PatchProposal {
+  id: string;
+  taskId: string;
+  source: "mock_code_agent" | "gitlab_adapter" | "hybrid";
+  status: "draft" | "ready_for_review" | "approved" | "applied" | "failed";
+  title: string;
+  summary: string;
+  suspectedFiles: string[];
+  recommendedStrategy: string;
+  explanation: string;
+  confidence: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PatchFile {
+  id: string;
+  proposalId: string;
+  taskId: string;
+  filePath: string;
+  changeType: "update" | "create" | "delete";
+  patch: string;
+  explanation: string;
+  createdAt: number;
+}
+
+export interface VerificationPlan {
+  id: string;
+  taskId: string;
+  proposalId: string;
+  targetUrl: string;
+  expectedOutcome: string;
+  checks: string[];
+  createdAt: number;
+}
+
+export interface NormalizedFixRecommendation {
+  taskId: string;
+  issueType: string;
+  suspectedComponent: string;
+  suspectedFiles: string[];
+  explanation: string;
+  recommendedFix: string;
+  evidence: string[];
+  tags: string[];
+  confidence: number;
+  sourceArtifactIds: string[];
 }

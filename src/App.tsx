@@ -1,5 +1,7 @@
 import { startMockOrchestrator } from "./lib/orchestrator";
 import { runUiInspectionWorkflow } from "./lib/workflows/uiInspection.workflow";
+import { runVerificationPreparationWorkflow } from "./lib/workflows/verificationPreparation.workflow";
+import { patchProposalService } from "./lib/services/patchProposal.service";
 import { config } from "./lib/config/env";
 import { useLiveQuery } from "dexie-react-hooks";
 import { taskService } from "./lib/services";
@@ -276,6 +278,8 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
   const currentArtifact = useLiveQuery(() => taskService.getArtifactsByTaskIdAndType(taskId, codeTab), [taskId, codeTab]);
   const memoryHits = useLiveQuery(() => memoryService.getTaskMemoryHits(taskId), [taskId]);
   const runSteps = useLiveQuery(() => run ? runService.getRunStepsByRunId(run.id) : [], [run?.id]);
+  const latestProposal = useLiveQuery(() => patchProposalService.getLatestProposalForTask(taskId), [taskId]);
+  const patchFiles = useLiveQuery(() => latestProposal ? patchProposalService.getPatchFilesForProposal(latestProposal.id) : [], [latestProposal?.id]);
 
   useEffect(() => {
     if (task && task.status === 'running') {
@@ -288,25 +292,29 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
   }, [task?.status, taskId, task?.inspectionStatus]);
 
   const handleApprove = async () => {
-    await taskService.appendAgentMessage({
-      taskId,
-      sender: 'system',
-      content: 'Changes approved and merged.',
-      kind: 'success',
-      timestamp: Date.now()
-    });
+    if (config.liveMode && latestProposal && latestProposal.status === 'ready_for_review') {
+      runVerificationPreparationWorkflow(taskId, latestProposal.id);
+    } else {
+      await taskService.appendAgentMessage({
+        taskId,
+        sender: 'system',
+        content: 'Changes approved and merged.',
+        kind: 'success',
+        timestamp: Date.now()
+      });
 
-    await runService.createAgentEvent({
-      taskId,
-      source: "ui_agent",
-      type: "STATUS_CHANGED",
-      title: "Task Approved",
-      description: "User approved the generated patch.",
-      metadata: JSON.stringify({ action: "approve" }),
-      timestamp: Date.now()
-    });
+      await runService.createAgentEvent({
+        taskId,
+        source: "ui_agent",
+        type: "STATUS_CHANGED",
+        title: "Task Approved",
+        description: "User approved the generated patch.",
+        metadata: JSON.stringify({ action: "approve" }),
+        timestamp: Date.now()
+      });
 
-    await taskService.updateTaskStatus(taskId, 'merged');
+      await taskService.updateTaskStatus(taskId, 'merged');
+    }
 
     // Requirement 9: Update artifacts with final completion content
     if (task) {
@@ -612,7 +620,7 @@ const TaskDetail = ({ taskId, onBack }: { taskId: string, onBack: () => void }) 
                   {currentArtifact ? (
                     codeTab === 'diff' ? (
                       <div>
-                        {currentArtifact.content.split('\n').map((line, i) => {
+                        {(patchFiles && patchFiles.length > 0 ? patchFiles.map(f => f.patch).join('\n\n') : currentArtifact.content).split('\n').map((line, i) => {
                           const isAdd = line.startsWith('+');
                           const isSub = line.startsWith('-');
                           const isHeader = line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++');

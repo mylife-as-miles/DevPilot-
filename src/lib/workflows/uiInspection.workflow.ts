@@ -1,3 +1,4 @@
+import { runCodeFixWorkflow } from './codeFix.workflow';
 import { taskService } from '../services';
 import { runService } from '../services/run.service';
 import { memoryService } from '../services/memory.service';
@@ -129,17 +130,20 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       inspectionStatus: 'completed',
       lastInspectionAt: Date.now()
     });
-    await completeStep(4, "Inspection finished and recorded.");
+        await completeStep(4, "Inspection finished and recorded.");
 
     await runService.createAgentEvent({
       taskId,
       source: "system",
       type: "STATUS_CHANGED",
       title: "Inspection Complete",
-      description: "Ready for user review.",
+      description: "Proceeding to Code Fix generation.",
       metadata: "{}",
       timestamp: Date.now()
     });
+
+    // Start code fix workflow seamlessly
+    runCodeFixWorkflow(taskId);
 
   } catch (err: any) {
     console.error("Workflow failed:", err);
