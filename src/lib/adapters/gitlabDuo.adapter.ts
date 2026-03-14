@@ -1,6 +1,7 @@
-import { AgentRole, AgentType, GitLabDuoFlowRun } from '../../types';
+import { DuoAgentRole, DuoFlowStepKey } from '../../types';
 import { gitlabDuoService } from '../services/gitlabDuo.service';
 import { runService } from '../services/run.service';
+import { config } from '../config/env';
 
 export interface AgentInvocationResult {
   success: boolean;
@@ -17,12 +18,14 @@ export const gitlabDuoAdapter = {
   /**
    * Starts or resumes a custom GitLab Duo Flow run.
    */
-  async initializeFlowRun(taskId: string, flowName: string): Promise<string> {
-    const flowRunId = `run_${crypto.randomUUID().slice(0, 8)}`;
+  async initializeFlowRun(taskId: string, flowDefinitionId: string): Promise<string> {
+    const isLive = config.liveDuoExecution;
+    const flowRunId = isLive ? `real_flow_${crypto.randomUUID().slice(0, 8)}` : `mock_run_${crypto.randomUUID().slice(0, 8)}`;
+
     return await gitlabDuoService.createOrUpdateFlowRun({
       taskId,
       flowRunId,
-      flowName,
+      flowDefinitionId,
       status: 'running',
     });
   },
@@ -32,16 +35,31 @@ export const gitlabDuoAdapter = {
    */
   async invokeAgent(
     taskId: string,
-    stepKey: string,
-    agentRole: AgentRole,
+    stepKey: DuoFlowStepKey,
+    agentRole: DuoAgentRole,
     contextPayload: Record<string, any> = {}
   ): Promise<AgentInvocationResult> {
+    const isLive = config.liveDuoExecution;
+    const flowRun = await gitlabDuoService.getFlowRunByTaskId(taskId);
+    if (!flowRun) {
+        return { success: false, message: 'Flow run not found.' };
+    }
 
-    // In a live environment, this would call the GitLab Duo Custom Agent API endpoint
-    // e.g. POST /api/v4/projects/:id/duo/agents/:agent_id/invocations
+    if (isLive) {
+      // Future live execution path
+      // e.g. await fetch(config.gitlabDuoApiUrl + '/agents/invoke', { ... })
+      console.log(`[LIVE DUO MODE] Invoking ${agentRole} for step ${stepKey}`);
+    }
 
     // Persist local state for the agent handoff
-    await gitlabDuoService.updateFlowStep(taskId, stepKey, agentRole, 'running');
+    await gitlabDuoService.updateFlowStep(taskId, stepKey, 'running');
+    const invocationId = await gitlabDuoService.createAgentInvocation(
+        flowRun.id,
+        taskId,
+        agentRole,
+        stepKey,
+        contextPayload
+    );
 
     await runService.createAgentEvent({
       taskId,
@@ -53,6 +71,10 @@ export const gitlabDuoAdapter = {
       timestamp: Date.now()
     });
 
+    // Auto-complete the invocation record for synchronous local/mock steps
+    // (In a truly async live mode, this would be completed via a webhook or polling)
+    await gitlabDuoService.completeAgentInvocation(invocationId, true);
+
     return { success: true, message: `Agent ${agentRole} successfully assigned.` };
   },
 
@@ -60,6 +82,12 @@ export const gitlabDuoAdapter = {
    * Reaches an approval checkpoint in the Custom Flow where human intervention is required.
    */
   async requireApprovalCheckpoint(taskId: string, description: string): Promise<void> {
+    const isLive = config.liveDuoExecution;
+    if (isLive) {
+       console.log(`[LIVE DUO MODE] Approval checkpoint reached: ${description}`);
+       // Future real checkpoint API call
+    }
+    await gitlabDuoService.updateFlowStep(taskId, "wait_for_approval", 'paused');
     await runService.createAgentEvent({
       taskId,
       source: "orchestrator",
@@ -77,11 +105,16 @@ export const gitlabDuoAdapter = {
   async completeFlowRun(taskId: string, success: boolean): Promise<void> {
     const existing = await gitlabDuoService.getFlowRunByTaskId(taskId);
     if (existing) {
+      const status = success ? 'completed' : 'failed';
       await gitlabDuoService.createOrUpdateFlowRun({
         taskId,
         flowRunId: existing.flowRunId,
-        status: success ? 'completed' : 'failed'
+        flowDefinitionId: existing.flowDefinitionId,
+        status
       });
+      if (config.liveDuoExecution) {
+          console.log(`[LIVE DUO MODE] Flow ${existing.flowRunId} completed with status: ${status}`);
+      }
     }
   }
 
