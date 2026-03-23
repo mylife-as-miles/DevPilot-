@@ -9,8 +9,9 @@ import {
     patchProposalService,
     taskService,
     verificationService,
+    memoryService,
+    runService,
 } from "../../lib/services";
-import { runService } from "../../lib/services/run.service";
 import { runUiInspectionWorkflow } from "../../lib/workflows/uiInspection.workflow";
 import { runVerificationPreparationWorkflow } from "../../lib/workflows/verificationPreparation.workflow";
 import {
@@ -61,7 +62,7 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
     const task = useLiveQuery(() => taskService.getTaskById(taskId), [taskId]);
     const messages = useLiveQuery(() => taskService.getMessagesByTaskId(taskId), [taskId]);
     const run = useLiveQuery(() => taskService.getActiveAgentRun(taskId), [taskId]);
-    const memoryHits = useLiveQuery(() => taskService.getTaskMemoryHits(taskId), [taskId]);
+    const memoryHits = useLiveQuery(() => memoryService.getTaskMemoryHits(taskId), [taskId]);
     const latestProposal = useLiveQuery(
         () => patchProposalService.getLatestProposalForTask(taskId),
         [taskId],

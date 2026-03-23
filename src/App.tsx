@@ -113,18 +113,16 @@ export default function App() {
         <Header navigate={navigate} />
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <DashboardHeroComposer
-            onCreateTask={handleCreateTask}
-            isIntegrationReady={integrationState.ready}
-            integrationIssues={integrationState.issues}
-            isLoadingProjects={integrationState.loading}
-            availableProjects={integrationState.availableProjects}
-            selectedProjectId={integrationState.project?.id || ""}
-            onProjectChange={handleProjectChange}
+            projectLabel={integrationState.project?.name || "Select Project"}
+            projectPath={projectPath}
+            branches={branchNames}
             selectedBranch={selectedBranch}
             onBranchChange={setSelectedBranch}
-            availableBranches={integrationState.branches}
-            isCreatingTask={isCreatingTask}
-            error={dashboardError}
+            onSubmit={handleCreateTask}
+            isReady={integrationState.ready}
+            isSubmitting={isCreatingTask}
+            availableProjects={integrationState.availableProjects}
+            onProjectChange={handleProjectChange}
           />
 
           <section className="mt-16">
