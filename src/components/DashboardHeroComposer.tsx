@@ -155,7 +155,7 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
           className="hero-composer-shell mt-8 w-full max-w-4xl rounded-[30px] border border-white/[0.08] bg-surface-elevated/95 p-2 backdrop-blur-xl transition-all duration-300"
           ref={containerRef}
         >
-          <div className="relative overflow-hidden rounded-[24px] border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))]">
+          <div className="relative rounded-[24px] border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))]">
             <div className="absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
 
             <form
