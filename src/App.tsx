@@ -54,6 +54,7 @@ interface IntegrationState {
   issues: string[];
   project?: GitLabProjectSummary;
   branches: GitLabBranchSummary[];
+  availableProjects: GitLabProjectSummary[];
 }
 
 const Header = ({ navigate }: { navigate: (page: Page) => void }) => (
@@ -122,11 +123,10 @@ const Tabs = ({
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
-          className={`pb-4 text-sm transition-colors ${
-            activeTab === tab.id
-              ? "border-b-2 border-primary font-semibold text-primary"
-              : "font-medium text-slate-500 hover:text-slate-300"
-          }`}
+          className={`pb-4 text-sm transition-colors ${activeTab === tab.id
+            ? "border-b-2 border-primary font-semibold text-primary"
+            : "font-medium text-slate-500 hover:text-slate-300"
+            }`}
         >
           {tab.label}
         </button>
@@ -507,9 +507,8 @@ const TaskDetail = ({
       await taskService.appendAgentMessage({
         taskId,
         sender: "system",
-        content: `Unable to start UI inspection: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        content: `Unable to start UI inspection: ${error instanceof Error ? error.message : String(error)
+          }`,
         kind: "warning",
         timestamp: Date.now(),
       });
@@ -773,11 +772,10 @@ const TaskDetail = ({
 
       <main className="flex flex-1 flex-col overflow-hidden md:flex-row">
         <aside
-          className={`absolute z-40 flex h-full flex-col border-border-dark bg-background-dark transition-all duration-300 md:relative md:static ${
-            isAgentOpen
-              ? "w-[85vw] border-r shadow-2xl md:w-80 md:shadow-none"
-              : "w-12 border-r"
-          }`}
+          className={`absolute z-40 flex h-full flex-col border-border-dark bg-background-dark transition-all duration-300 md:relative md:static ${isAgentOpen
+            ? "w-[85vw] border-r shadow-2xl md:w-80 md:shadow-none"
+            : "w-12 border-r"
+            }`}
         >
           <div
             className="flex cursor-pointer items-center justify-between border-b border-border-dark p-4 hover:bg-surface-dark/50"
@@ -814,13 +812,12 @@ const TaskDetail = ({
                   <div key={message.id} className="space-y-2">
                     <div className="flex items-center gap-2">
                       <div
-                        className={`flex size-6 items-center justify-center rounded ${
-                          message.kind === "success"
-                            ? "bg-green-500/20 text-green-500"
-                            : message.kind === "warning"
-                              ? "bg-yellow-500/20 text-yellow-500"
-                              : "bg-primary/20 text-primary"
-                        }`}
+                        className={`flex size-6 items-center justify-center rounded ${message.kind === "success"
+                          ? "bg-green-500/20 text-green-500"
+                          : message.kind === "warning"
+                            ? "bg-yellow-500/20 text-yellow-500"
+                            : "bg-primary/20 text-primary"
+                          }`}
                       >
                         <span className="material-symbols-outlined text-sm">
                           {message.sender === "system" ? "dns" : "smart_toy"}
@@ -834,13 +831,12 @@ const TaskDetail = ({
                       </span>
                     </div>
                     <div
-                      className={`rounded-lg border p-3 text-sm leading-relaxed ${
-                        message.kind === "success"
-                          ? "border-green-500/20 bg-green-900/10 text-green-200"
-                          : message.kind === "warning"
-                            ? "border-yellow-500/20 bg-yellow-900/10 text-yellow-200"
-                            : "border-border-dark bg-surface-dark text-slate-300"
-                      }`}
+                      className={`rounded-lg border p-3 text-sm leading-relaxed ${message.kind === "success"
+                        ? "border-green-500/20 bg-green-900/10 text-green-200"
+                        : message.kind === "warning"
+                          ? "border-yellow-500/20 bg-yellow-900/10 text-yellow-200"
+                          : "border-border-dark bg-surface-dark text-slate-300"
+                        }`}
                     >
                       {message.content}
                     </div>
@@ -871,15 +867,14 @@ const TaskDetail = ({
                             {step.label}
                           </span>
                           <span
-                            className={`text-[10px] font-bold uppercase tracking-wider ${
-                              step.status === "completed"
-                                ? "text-green-400"
-                                : step.status === "failed"
-                                  ? "text-red-400"
-                                  : step.status === "running"
-                                    ? "text-primary"
-                                    : "text-slate-500"
-                            }`}
+                            className={`text-[10px] font-bold uppercase tracking-wider ${step.status === "completed"
+                              ? "text-green-400"
+                              : step.status === "failed"
+                                ? "text-red-400"
+                                : step.status === "running"
+                                  ? "text-primary"
+                                  : "text-slate-500"
+                              }`}
                           >
                             {step.status}
                           </span>
@@ -980,9 +975,8 @@ const TaskDetail = ({
 
         <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
           <section
-            className={`flex flex-col border-r border-border-dark bg-[#1c140c] transition-all duration-300 ${
-              isBrowserOpen ? "flex-[1.5]" : "w-12 flex-none"
-            }`}
+            className={`flex flex-col border-r border-border-dark bg-[#1c140c] transition-all duration-300 ${isBrowserOpen ? "flex-[1.5]" : "w-12 flex-none"
+              }`}
           >
             <div
               className="flex cursor-pointer items-center justify-between border-b border-border-dark bg-background-dark p-3 hover:bg-surface-dark/50"
@@ -1083,11 +1077,10 @@ const TaskDetail = ({
             )}
           </section>
           <section
-            className={`absolute bottom-0 right-0 z-40 flex flex-col border-t border-border-dark bg-background-dark shadow-2xl transition-all duration-300 md:static md:border-t-0 md:shadow-none ${
-              isCodeOpen
-                ? "h-[60vh] w-full md:h-auto md:w-auto md:flex-1"
-                : "h-12 w-full md:h-auto md:w-12 md:flex-none"
-            }`}
+            className={`absolute bottom-0 right-0 z-40 flex flex-col border-t border-border-dark bg-background-dark shadow-2xl transition-all duration-300 md:static md:border-t-0 md:shadow-none ${isCodeOpen
+              ? "h-[60vh] w-full md:h-auto md:w-auto md:flex-1"
+              : "h-12 w-full md:h-auto md:w-12 md:flex-none"
+              }`}
           >
             <div className="flex cursor-pointer border-b border-border-dark bg-surface-dark/20 hover:bg-surface-dark/40">
               {isCodeOpen ? (
@@ -1097,11 +1090,10 @@ const TaskDetail = ({
                       event.stopPropagation();
                       setCodeTab("diff");
                     }}
-                    className={`px-6 py-3 text-sm ${
-                      codeTab === "diff"
-                        ? "border-b-2 border-primary font-bold text-white"
-                        : "font-medium text-slate-500 hover:text-white"
-                    }`}
+                    className={`px-6 py-3 text-sm ${codeTab === "diff"
+                      ? "border-b-2 border-primary font-bold text-white"
+                      : "font-medium text-slate-500 hover:text-white"
+                      }`}
                   >
                     Diff
                   </button>
@@ -1110,11 +1102,10 @@ const TaskDetail = ({
                       event.stopPropagation();
                       setCodeTab("log");
                     }}
-                    className={`px-6 py-3 text-sm ${
-                      codeTab === "log"
-                        ? "border-b-2 border-primary font-bold text-white"
-                        : "font-medium text-slate-500 hover:text-white"
-                    }`}
+                    className={`px-6 py-3 text-sm ${codeTab === "log"
+                      ? "border-b-2 border-primary font-bold text-white"
+                      : "font-medium text-slate-500 hover:text-white"
+                      }`}
                   >
                     Logs
                   </button>
@@ -1123,11 +1114,10 @@ const TaskDetail = ({
                       event.stopPropagation();
                       setCodeTab("terminal");
                     }}
-                    className={`px-6 py-3 text-sm ${
-                      codeTab === "terminal"
-                        ? "border-b-2 border-primary font-bold text-white"
-                        : "font-medium text-slate-500 hover:text-white"
-                    }`}
+                    className={`px-6 py-3 text-sm ${codeTab === "terminal"
+                      ? "border-b-2 border-primary font-bold text-white"
+                      : "font-medium text-slate-500 hover:text-white"
+                      }`}
                   >
                     Terminal
                   </button>
@@ -1136,11 +1126,10 @@ const TaskDetail = ({
                       event.stopPropagation();
                       setCodeTab("vision_analysis");
                     }}
-                    className={`px-6 py-3 text-sm ${
-                      codeTab === "vision_analysis"
-                        ? "border-b-2 border-primary font-bold text-white"
-                        : "font-medium text-slate-500 hover:text-white"
-                    }`}
+                    className={`px-6 py-3 text-sm ${codeTab === "vision_analysis"
+                      ? "border-b-2 border-primary font-bold text-white"
+                      : "font-medium text-slate-500 hover:text-white"
+                      }`}
                   >
                     Vision
                   </button>
@@ -1291,7 +1280,9 @@ export default function App() {
     ready: false,
     issues: [],
     branches: [],
+    availableProjects: [],
   });
+  const [selectedProjectId, setSelectedProjectId] = useState<string | number>(config.gitlabProjectId || "");
   const [selectedBranch, setSelectedBranch] = useState("");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -1306,7 +1297,7 @@ export default function App() {
 
     if (!config.isGitLabConfigured) {
       issues.push(
-        "GitLab is not configured. Set VITE_LIVE_REPOSITORY_MODE=true, VITE_GITLAB_TOKEN, and VITE_GITLAB_PROJECT_ID.",
+        "GitLab token is not configured. Set VITE_LIVE_REPOSITORY_MODE=true and VITE_GITLAB_TOKEN.",
       );
     }
 
@@ -1330,30 +1321,46 @@ export default function App() {
         }
       } catch (error) {
         issues.push(
-          `Sandbox is unreachable at ${config.sandboxUrl}: ${
-            error instanceof Error ? error.message : String(error)
+          `Sandbox is unreachable at ${config.sandboxUrl}: ${error instanceof Error ? error.message : String(error)
           }`,
         );
       }
     }
 
+    let availableProjects: GitLabProjectSummary[] = [];
+
     if (config.isGitLabConfigured) {
-      const [projectResult, branchResult] = await Promise.all([
-        gitlabRepositoryAdapter.getProject(),
-        gitlabRepositoryAdapter.listBranches(),
-      ]);
+      const projectsResult = await gitlabRepositoryAdapter.listProjects();
+      if (projectsResult.success && projectsResult.data) {
+        availableProjects = projectsResult.data;
 
-      if (!projectResult.success || !projectResult.data) {
-        issues.push(projectResult.error || "Failed to load the configured GitLab project.");
-      } else {
-        project = projectResult.data;
-      }
+        // Use either the hardcoded project ID or the first available one if nothing is selected
+        const currentId = selectedProjectId || config.gitlabProjectId || availableProjects[0]?.id;
 
-      if (!branchResult.success || !branchResult.data) {
-        issues.push(branchResult.error || "Failed to load GitLab branches.");
+        if (currentId) {
+          const [projectResult, branchResult] = await Promise.all([
+            gitlabRepositoryAdapter.getProject(String(currentId)),
+            gitlabRepositoryAdapter.listBranches(String(currentId)),
+          ]);
+
+          if (projectResult.success && projectResult.data) {
+            project = projectResult.data;
+            if (!selectedProjectId) {
+              setSelectedProjectId(project.id);
+            }
+          }
+
+          if (branchResult.success && branchResult.data) {
+            branches = branchResult.data;
+          }
+        }
       } else {
-        branches = branchResult.data;
+        issues.push(projectsResult.error || "Failed to load GitLab projects.");
       }
+    }
+
+    if (config.isGitLabConfigured && !project) {
+      issues.push("No GitLab project selected. Please choose a project from the dropdown.");
     }
 
     setIntegrationState({
@@ -1362,6 +1369,31 @@ export default function App() {
       issues,
       project,
       branches,
+      availableProjects,
+    });
+  };
+
+  const handleProjectChange = async (projectId: string | number) => {
+    setSelectedProjectId(projectId);
+    setIntegrationState(prev => ({ ...prev, loading: true }));
+
+    const [projectResult, branchResult] = await Promise.all([
+      gitlabRepositoryAdapter.getProject(String(projectId)),
+      gitlabRepositoryAdapter.listBranches(String(projectId)),
+    ]);
+
+    setIntegrationState(prev => {
+      const newIssues = prev.issues.filter(i => !i.includes("project"));
+      const ready = newIssues.length === 0 && !!projectResult.data && !!branchResult.data;
+
+      return {
+        ...prev,
+        loading: false,
+        ready,
+        issues: newIssues,
+        project: projectResult.data || prev.project,
+        branches: branchResult.data || [],
+      };
     });
   };
 
@@ -1547,13 +1579,18 @@ export default function App() {
           selectedBranch={selectedBranch}
           onBranchChange={setSelectedBranch}
           onSubmit={handleCreateTask}
-          disabled={!integrationState.ready}
+          disabled={!config.isGitLabConfigured || integrationState.loading}
           isSubmitting={isCreatingTask || integrationState.loading}
+          isReady={integrationState.ready}
           helperText={
             integrationState.ready
               ? "Routes through live inspection, patch proposal, GitLab handoff, and verification."
-              : "Resolve the integration checks below to enable live DevPilot runs."
+              : !integrationState.project
+                ? "Select a GitLab project from the dropdown to continue."
+                : "Resolve the integration checks below to enable live DevPilot runs."
           }
+          availableProjects={integrationState.availableProjects}
+          onProjectChange={handleProjectChange}
         />
 
         {!integrationState.ready && (

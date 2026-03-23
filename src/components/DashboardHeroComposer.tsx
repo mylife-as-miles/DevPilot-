@@ -7,6 +7,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { GitLabProjectSummary } from "../types";
 
 interface HeroControlChipProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -79,8 +80,11 @@ interface DashboardHeroComposerProps {
   onSubmit: (prompt: string) => void;
   disabled?: boolean;
   isSubmitting?: boolean;
+  isReady?: boolean;
   placeholder?: string;
   helperText?: string;
+  availableProjects?: GitLabProjectSummary[];
+  onProjectChange?: (projectId: string | number) => void;
 }
 
 export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
@@ -92,11 +96,15 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
   onSubmit,
   disabled = false,
   isSubmitting = false,
+  isReady = false,
   placeholder = "Describe the UI defect, repository task, or verification goal",
   helperText = "Routes through vision inspection, patch proposal, and verification before GitLab handoff.",
+  availableProjects = [],
+  onProjectChange,
 }) => {
   const [content, setContent] = useState("");
   const [isBranchOpen, setIsBranchOpen] = useState(false);
+  const [isProjectOpen, setIsProjectOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -106,6 +114,7 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
         !containerRef.current.contains(event.target as Node)
       ) {
         setIsBranchOpen(false);
+        setIsProjectOpen(false);
       }
     };
 
@@ -115,7 +124,7 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
 
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled || isSubmitting || !content.trim()) {
+    if (disabled || !isReady || isSubmitting || !content.trim()) {
       return;
     }
 
@@ -176,12 +185,49 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
 
               {/* Repository · Branch · Run Mode — second row beneath */}
               <div className="flex w-full flex-wrap items-stretch gap-2 sm:flex-nowrap">
-                <HeroControlChip
-                  icon={Folder}
-                  label="Repository"
-                  value={projectPath || projectLabel}
-                  disabled
-                />
+                <div className="relative">
+                  <HeroControlChip
+                    icon={Folder}
+                    label="Repository"
+                    value={projectPath || projectLabel}
+                    onClick={() => {
+                      if (disabled || availableProjects.length === 0) {
+                        return;
+                      }
+                      setIsProjectOpen((current) => !current);
+                      setIsBranchOpen(false);
+                    }}
+                    disabled={disabled || availableProjects.length === 0}
+                    accent={isProjectOpen}
+                  />
+
+                  {isProjectOpen && availableProjects.length > 0 && (
+                    <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-64 rounded-2xl border border-white/[0.08] bg-[#151515] p-2 shadow-2xl">
+                      <div className="mb-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Select Project
+                      </div>
+                      <div className="max-h-60 overflow-y-auto">
+                        {availableProjects.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${p.pathWithNamespace === projectPath
+                              ? "bg-primary/10 text-primary font-semibold"
+                              : "text-slate-300 hover:bg-white/[0.06]"
+                              }`}
+                            onClick={() => {
+                              onProjectChange?.(p.id);
+                              setIsProjectOpen(false);
+                            }}
+                          >
+                            <div className="truncate font-medium">{p.name}</div>
+                            <div className="truncate text-[10px] text-slate-500">{p.pathWithNamespace}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="relative">
                   <HeroControlChip
@@ -193,8 +239,10 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
                         return;
                       }
                       setIsBranchOpen((current) => !current);
+                      setIsProjectOpen(false);
                     }}
                     disabled={disabled || branches.length === 0}
+                    accent={isBranchOpen}
                   />
 
                   {isBranchOpen && branches.length > 0 && (
@@ -204,8 +252,8 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
                           key={branch}
                           type="button"
                           className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${branch === selectedBranch
-                              ? "bg-primary/10 text-primary"
-                              : "text-slate-300 hover:bg-white/[0.06]"
+                            ? "bg-primary/10 text-primary"
+                            : "text-slate-300 hover:bg-white/[0.06]"
                             }`}
                           onClick={() => {
                             onBranchChange(branch);
@@ -221,7 +269,7 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
 
                 <button
                   type="submit"
-                  disabled={disabled || isSubmitting || !content.trim()}
+                  disabled={disabled || !isReady || isSubmitting || !content.trim()}
                   className="group flex min-w-[132px] flex-1 items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/10 px-3.5 py-2.5 text-left transition-all duration-200 hover:border-primary/[0.35] hover:bg-primary/[0.14] disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
                 >
                   <span className="flex min-w-0 items-center gap-2.5">

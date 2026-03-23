@@ -55,8 +55,12 @@ function apiBase(): string {
   return `${config.gitlabUrl}/api/v4`;
 }
 
-function projectPath(): string {
-  return `${apiBase()}/projects/${encodeURIComponent(config.gitlabProjectId)}`;
+function projectPath(projectId?: string | number): string {
+  const finalId = projectId || config.gitlabProjectId;
+  if (!finalId) {
+    throw new Error("Project ID is required but not configured or provided.");
+  }
+  return `${apiBase()}/projects/${encodeURIComponent(finalId)}`;
 }
 
 function fail<T>(message: string, logs: string[]): GitLabAdapterResult<T> {
@@ -77,10 +81,10 @@ function decodeBase64(content: string): string {
 }
 
 async function gitlabFetch<T>(
-  path: string,
+  path: string, // relative to apiBase()
   init: RequestInit = {},
 ): Promise<{ data: T; response: Response }> {
-  const response = await fetch(`${projectPath()}${path}`, {
+  const response = await fetch(`${apiBase()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -104,15 +108,20 @@ function isLiveCapable(): boolean {
   return config.isGitLabConfigured;
 }
 
-function ensureLiveCapable(logs: string[]): string | null {
-  if (isLiveCapable()) {
-    return null;
+function ensureLiveCapable(logs: string[], requireProject = true): string | null {
+  if (!config.isGitLabConfigured) {
+    const message = "GitLab token is not configured. Set VITE_GITLAB_TOKEN.";
+    logs.push(message);
+    return message;
   }
 
-  const message =
-    "GitLab integration is not configured. Set VITE_LIVE_REPOSITORY_MODE, VITE_GITLAB_TOKEN, and VITE_GITLAB_PROJECT_ID.";
-  logs.push(message);
-  return message;
+  if (requireProject && !config.gitlabProjectId) {
+    const message = "GitLab project is not selected. Configure VITE_GITLAB_PROJECT_ID or select a project.";
+    logs.push(message);
+    return message;
+  }
+
+  return null;
 }
 
 async function collectPaginated<T>(path: string): Promise<T[]> {
@@ -131,12 +140,53 @@ async function collectPaginated<T>(path: string): Promise<T[]> {
   return records;
 }
 
+function p(path: string, projectId?: string | number): string {
+  const base = `/projects/${encodeURIComponent(projectId || config.gitlabProjectId)}`;
+  return `${base}${path}`;
+}
+
 export const gitlabRepositoryAdapter = {
   isLiveCapable,
 
-  async getProject(): Promise<GitLabAdapterResult<GitLabProjectSummary>> {
+  async listProjects(): Promise<GitLabAdapterResult<GitLabProjectSummary[]>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, false);
+    if (configError) {
+      return fail(configError, logs);
+    }
+
+    try {
+      logs.push("[GITLAB] Listing projects...");
+      const data = await collectPaginated<{
+        id: number;
+        name: string;
+        path_with_namespace: string;
+        default_branch: string;
+        web_url: string;
+      }>("/projects?membership=true&min_access_level=30&archived=false&simple=true");
+
+      return {
+        success: true,
+        mode: "live",
+        data: data.map((d) => ({
+          id: d.id,
+          name: d.name,
+          pathWithNamespace: d.path_with_namespace,
+          defaultBranch: d.default_branch,
+          webUrl: d.web_url,
+        })),
+        logs,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logs.push(`[GITLAB] Project listing failed: ${message}`);
+      return fail(message, logs);
+    }
+  },
+
+  async getProject(projectId?: string | number): Promise<GitLabAdapterResult<GitLabProjectSummary>> {
+    const logs: string[] = [];
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -149,7 +199,7 @@ export const gitlabRepositoryAdapter = {
         path_with_namespace: string;
         default_branch: string;
         web_url: string;
-      }>("", { method: "GET" });
+      }>(p("", projectId), { method: "GET" });
 
       return {
         success: true,
@@ -170,9 +220,9 @@ export const gitlabRepositoryAdapter = {
     }
   },
 
-  async listBranches(): Promise<GitLabAdapterResult<GitLabBranchSummary[]>> {
+  async listBranches(projectId?: string | number): Promise<GitLabAdapterResult<GitLabBranchSummary[]>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -184,7 +234,7 @@ export const gitlabRepositoryAdapter = {
         default: boolean;
         merged: boolean;
         protected: boolean;
-      }>("/repository/branches");
+      }>(p("/repository/branches", projectId));
 
       return {
         success: true,
@@ -205,11 +255,12 @@ export const gitlabRepositoryAdapter = {
   },
 
   async listRepositoryTree(
+    projectId?: string | number,
     ref: string = config.gitlabDefaultBranch,
     path?: string,
   ): Promise<GitLabAdapterResult<GitLabRepositoryTreeEntry[]>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -218,7 +269,7 @@ export const gitlabRepositoryAdapter = {
       const encodedPath = path ? `&path=${encodeURIComponent(path)}` : "";
       logs.push(`[GITLAB] Listing repository tree for ref "${ref}"...`);
       const data = await collectPaginated<GitLabRepositoryTreeEntry>(
-        `/repository/tree?recursive=true&ref=${encodeURIComponent(ref)}${encodedPath}`,
+        p(`/repository/tree?recursive=true&ref=${encodeURIComponent(ref)}${encodedPath}`, projectId),
       );
 
       return {
@@ -236,10 +287,11 @@ export const gitlabRepositoryAdapter = {
 
   async getFileContent(
     filePath: string,
+    projectId?: string | number,
     ref: string = config.gitlabDefaultBranch,
   ): Promise<GitLabAdapterResult<GitLabRepositoryFile>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -250,7 +302,7 @@ export const gitlabRepositoryAdapter = {
         file_path: string;
         content: string;
       }>(
-        `/repository/files/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(ref)}`,
+        p(`/repository/files/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(ref)}`, projectId),
       );
 
       return {
@@ -272,10 +324,11 @@ export const gitlabRepositoryAdapter = {
 
   async createBranch(
     branchName: string,
+    projectId?: string | number,
     ref: string = config.gitlabDefaultBranch,
   ): Promise<GitLabAdapterResult<BranchResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -283,7 +336,7 @@ export const gitlabRepositoryAdapter = {
     try {
       logs.push(`[GITLAB] Creating branch "${branchName}" from "${ref}"...`);
       const { data } = await gitlabFetch<{ name: string; commit?: { id: string } }>(
-        "/repository/branches",
+        p("/repository/branches", projectId),
         {
           method: "POST",
           body: JSON.stringify({ branch: branchName, ref }),
@@ -311,9 +364,10 @@ export const gitlabRepositoryAdapter = {
       action?: "create" | "update" | "delete";
     }>,
     commitMessage: string,
+    projectId?: string | number,
   ): Promise<GitLabAdapterResult<CommitResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -325,7 +379,7 @@ export const gitlabRepositoryAdapter = {
         file_path: file.filePath,
         content: file.content,
       }));
-      const { data } = await gitlabFetch<{ id: string }>("/repository/commits", {
+      const { data } = await gitlabFetch<{ id: string }>(p("/repository/commits", projectId), {
         method: "POST",
         body: JSON.stringify({
           branch: branchName,
@@ -351,10 +405,11 @@ export const gitlabRepositoryAdapter = {
     sourceBranch: string,
     title: string,
     description = "",
+    projectId?: string | number,
     targetBranch: string = config.gitlabDefaultBranch,
   ): Promise<GitLabAdapterResult<MergeRequestResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -369,7 +424,7 @@ export const gitlabRepositoryAdapter = {
         title: string;
         source_branch: string;
         target_branch: string;
-      }>("/merge_requests", {
+      }>(p("/merge_requests", projectId), {
         method: "POST",
         body: JSON.stringify({
           source_branch: sourceBranch,
@@ -401,9 +456,10 @@ export const gitlabRepositoryAdapter = {
   async postMRComment(
     mergeRequestIid: number,
     body: string,
+    projectId?: string | number,
   ): Promise<GitLabAdapterResult<CommentResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -411,7 +467,7 @@ export const gitlabRepositoryAdapter = {
     try {
       logs.push(`[GITLAB] Posting comment on MR !${mergeRequestIid}...`);
       const { data } = await gitlabFetch<{ id: number }>(
-        `/merge_requests/${mergeRequestIid}/notes`,
+        p(`/merge_requests/${mergeRequestIid}/notes`, projectId),
         {
           method: "POST",
           body: JSON.stringify({ body }),
@@ -431,9 +487,9 @@ export const gitlabRepositoryAdapter = {
     }
   },
 
-  async rerunPipeline(ref: string): Promise<GitLabAdapterResult<PipelineResult>> {
+  async rerunPipeline(ref: string, projectId?: string | number): Promise<GitLabAdapterResult<PipelineResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -444,7 +500,7 @@ export const gitlabRepositoryAdapter = {
         id: number;
         web_url: string;
         status: string;
-      }>("/pipeline", {
+      }>(p("/pipeline", projectId), {
         method: "POST",
         body: JSON.stringify({ ref }),
       });
@@ -468,9 +524,10 @@ export const gitlabRepositoryAdapter = {
 
   async fetchMRStatus(
     mergeRequestIid: number,
+    projectId?: string | number,
   ): Promise<GitLabAdapterResult<MRStatusResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -483,7 +540,7 @@ export const gitlabRepositoryAdapter = {
         web_url: string;
         merged_at?: string;
         approved_by?: { user: { username: string } }[];
-      }>(`/merge_requests/${mergeRequestIid}`);
+      }>(p(`/merge_requests/${mergeRequestIid}`, projectId));
 
       return {
         success: true,
@@ -506,9 +563,10 @@ export const gitlabRepositoryAdapter = {
 
   async fetchPipelineStatus(
     pipelineId: number,
+    projectId?: string | number,
   ): Promise<GitLabAdapterResult<PipelineStatusResult>> {
     const logs: string[] = [];
-    const configError = ensureLiveCapable(logs);
+    const configError = ensureLiveCapable(logs, !projectId);
     if (configError) {
       return fail(configError, logs);
     }
@@ -521,7 +579,7 @@ export const gitlabRepositoryAdapter = {
         ref: string;
         web_url: string;
         finished_at?: string;
-      }>(`/pipelines/${pipelineId}`);
+      }>(p(`/pipelines/${pipelineId}`, projectId));
 
       return {
         success: true,

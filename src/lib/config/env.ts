@@ -37,7 +37,10 @@ export const config = {
   liveEventMode: getEnvVar('VITE_LIVE_EVENT_MODE', 'false') === 'true',
   webhookSecret: getEnvVar('VITE_GITLAB_WEBHOOK_SECRET'),
   get isGitLabConfigured() {
-    return !!(this.liveRepositoryMode && this.gitlabToken && this.gitlabProjectId);
+    return !!(this.liveRepositoryMode && this.gitlabToken);
+  },
+  get isProjectConfigured() {
+    return !!(this.isGitLabConfigured && this.gitlabProjectId);
   },
   get isGeminiConfigured() {
     return !!(this.liveMode && this.geminiApiKey);
