@@ -43,20 +43,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// Configure http-proxy-middleware for KasmVNC web client and websockets
-// Traffic to /vnc and its websockets will be proxied to the KasmVNC port (6080)
-const proxyOptions = {
-  target: `http://localhost:${WS_PORT}`,
-  ws: true,
-  changeOrigin: true,
-  logLevel: "debug" as const,
-};
-
-// Proxy KasmVNC static assets and websockets
-app.use('/vnc', createProxyMiddleware({
-  ...proxyOptions,
-  pathRewrite: { '^/vnc': '' }
-}));
+// Serve a placeholder for the VNC iframe in headless mode
+app.get('/vnc/*', (req: Request, res: Response) => {
+  res.send(`
+    <html>
+      <body style="background: #111; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+        <div style="text-align: center;">
+          <h2>Live Browser Preview Disabled</h2>
+          <p>The sandbox is currently running in headless mode for maximum stability.</p>
+          <p>Please rely on screenshots, DOM snapshots, and traces.</p>
+        </div>
+      </body>
+    </html>
+  `);
+});
 
 // Root path for simple status check
 app.get("/", (_req: Request, res: Response) => {

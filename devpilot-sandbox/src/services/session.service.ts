@@ -106,7 +106,7 @@ export class SessionService {
         );
       });
 
-      await page.goto('about:blank'); // Changed targetUrl to 'about:blank'
+      await page.goto(targetUrl, { waitUntil: "networkidle" });
 
       this.activeSession.browser = browser;
       this.activeSession.context = context;
