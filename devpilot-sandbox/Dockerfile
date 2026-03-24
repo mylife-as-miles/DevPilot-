@@ -23,8 +23,14 @@ RUN apt-get update && apt-get install -y \
 
 # Pre-configure KasmVNC system-wide to bypass prompts
 RUN mkdir -p /etc/kasmvnc && \
-    kasmvncadduser -u devpilot -p devpilot -w && \
-    mv /root/.vnc/kasmvncauth.db /etc/kasmvnc/kasmvncauth.db && \
+    for f in /usr/bin/kasmvncadduser /usr/bin/kasmvncuser /usr/share/kasmvnc/bin/kasmvncadduser /usr/share/kasmvnc/bin/kasmvncuser; do \
+    if [ -f "$f" ]; then \
+    echo "Found KasmVNC tool at $f"; \
+    $f -u devpilot -p devpilot -w; \
+    mv /root/.vnc/kasmvncauth.db /etc/kasmvnc/kasmvncauth.db; \
+    break; \
+    fi; \
+    done && \
     chown -R root:root /etc/kasmvnc
 
 # Create a non-root user for KasmVNC
