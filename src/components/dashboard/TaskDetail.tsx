@@ -254,6 +254,11 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
     const browserSummary = verificationResult?.summary || parsedVerification?.summary || parsedVision?.summary || "Waiting for live inspection evidence.";
     const browserDetail = verificationResult?.explanation || parsedVerification?.explanation || parsedVision?.explanation || "The browser pane will show real screenshots and analysis.";
 
+    // Format last inspected time if available
+    const lastInspectedStr = task.lastInspectionAt
+        ? new Date(task.lastInspectionAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : "Pending";
+
     // Determine active code view
     let codeView: React.ReactNode;
     if (codeTab === "diff") {
@@ -350,20 +355,57 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
                         )}
                     </div>
                     {isAgentOpen && (
-                        <div className="flex-1 space-y-6 overflow-y-auto p-4">
-                            {(messages || []).map((message) => (
-                                <div key={message.id} className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`flex size-6 items-center justify-center rounded ${message.kind === "success" ? "bg-green-500/20 text-green-500" : "bg-primary/20 text-primary"}`}>
-                                            <span className="material-symbols-outlined text-sm">{message.sender === "system" ? "dns" : "smart_toy"}</span>
+                        <div className="flex-1 space-y-5 overflow-y-auto p-4 custom-scrollbar">
+                            {(messages || []).map((message) => {
+                                // Determine styling based on sender role
+                                let icon = "smart_toy";
+                                let colorClass = "text-primary";
+                                let bgClass = "bg-primary/10 border-primary/20";
+                                let label: string = message.sender;
+
+                                if (message.sender === "system") {
+                                    icon = "tune";
+                                    colorClass = "text-slate-400";
+                                    bgClass = "bg-slate-800 border-border-dark";
+                                } else if (message.sender === "code_agent") {
+                                    icon = "code_blocks";
+                                    colorClass = "text-emerald-400";
+                                    bgClass = "bg-emerald-500/10 border-emerald-500/20";
+                                    label = "Code Engine";
+                                } else if (message.sender === "devpilot" || message.sender === "ui_agent") {
+                                    icon = "rocket_launch";
+                                    colorClass = "text-primary";
+                                    bgClass = "bg-primary/20 border-primary/30";
+                                    label = "DevPilot Synthesis";
+                                }
+
+                                if (message.kind === "success") {
+                                    colorClass = "text-green-500";
+                                    bgClass = "bg-green-500/20 border-green-500/30";
+                                    icon = "check_circle";
+                                } else if (message.kind === "warning") {
+                                    colorClass = "text-amber-400";
+                                    bgClass = "bg-amber-500/20 border-amber-500/30";
+                                    icon = "warning";
+                                }
+
+                                return (
+                                    <div key={message.id} className="space-y-1.5 opacity-95 hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className={`flex size-5 items-center justify-center rounded border ${bgClass} ${colorClass}`}>
+                                                <span className="material-symbols-outlined text-[13px]">{icon}</span>
+                                            </div>
+                                            <span className={`text-[11px] font-bold tracking-wider uppercase ${colorClass}`}>{label}</span>
+                                            <span className="text-[10px] text-slate-600 ml-auto font-mono">
+                                                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
                                         </div>
-                                        <span className="text-xs font-bold capitalize">{message.sender}</span>
+                                        <div className={`rounded-lg border border-border-dark bg-[#151515] p-3 text-[13px] leading-relaxed ${message.sender === "system" ? "text-slate-400 font-mono text-[11px]" : "text-slate-300"}`}>
+                                            {message.content}
+                                        </div>
                                     </div>
-                                    <div className="rounded-lg border border-border-dark bg-surface-dark p-3 text-sm leading-relaxed text-slate-300">
-                                        {message.content}
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                     <div className="mt-auto pb-4">
@@ -383,15 +425,32 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
                         <div className="flex-1 relative overflow-hidden bg-background-dark group">
                             {task.status === "running" ? (
                                 <div className="absolute inset-0 flex flex-col">
-                                    <div className="bg-surface-dark border-b border-border-dark px-4 py-1.5 flex items-center justify-between">
-                                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
-                                            <span className="flex h-2 w-2 relative">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
-                                                <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
-                                            </span>
-                                            Live Sandbox Stream (noVNC)
+                                    {/* Runtime Context Metadata Strip */}
+                                    <div className="bg-[#111111] border-b border-border-dark px-4 py-2 flex items-center justify-between shadow-sm z-10">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-green-500/30 bg-green-500/10 text-[10px] font-bold text-green-400 uppercase tracking-widest">
+                                                <span className="flex h-1.5 w-1.5 relative mr-0.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                                                </span>
+                                                LIVE SESSION
+                                            </div>
+                                            <span className="text-slate-500 text">|</span>
+                                            <div className="text-[11px] text-slate-300 font-mono tracking-tight font-medium flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+                                                {task.targetUrl || "http://localhost:3000"}
+                                            </div>
                                         </div>
-                                        <div className="text-[10px] text-slate-600 font-mono">1440x950</div>
+                                        <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+                                            <div className="flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">desktop_windows</span>
+                                                {viewportLabel}
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">update</span>
+                                                {lastInspectedStr}
+                                            </div>
+                                        </div>
                                     </div>
                                     <iframe
                                         src={`${config.sandboxUrl}/vnc.html?autoconnect=true&resize=scale&reconnect=true&logging=warn`}
@@ -400,12 +459,41 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
                                     />
                                 </div>
                             ) : (
-                                <div className="flex-1 overflow-auto p-4 flex items-center justify-center">
-                                    {screenshotSrc ? (
-                                        <img src={screenshotSrc} className="max-w-full rounded-xl shadow-2xl border border-border-dark" />
-                                    ) : (
-                                        <div className="text-slate-500 text-center py-20 font-mono text-xs uppercase tracking-widest">Awaiting Browser Session</div>
-                                    )}
+                                <div className="flex-1 flex flex-col">
+                                    {/* Captured Frame Metadata Strip */}
+                                    <div className="bg-[#111111] border-b border-border-dark px-4 py-2 flex items-center justify-between shadow-sm z-10 w-full shrink-0">
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-slate-600/30 bg-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                <span className="material-symbols-outlined text-[12px]">photo_camera</span>
+                                                CAPTURED FRAME
+                                            </div>
+                                            <span className="text-slate-500 text">|</span>
+                                            <div className="text-[11px] text-slate-300 font-mono tracking-tight font-medium flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+                                                {task.targetUrl || "http://localhost:3000"}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+                                            <div className="flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">desktop_windows</span>
+                                                {viewportLabel}
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">history</span>
+                                                {lastInspectedStr}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-background-dark/50">
+                                        {screenshotSrc ? (
+                                            <img src={screenshotSrc} className="max-w-full rounded-md shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-[#333]" />
+                                        ) : (
+                                            <div className="flex flex-col items-center gap-3 text-slate-500">
+                                                <span className="material-symbols-outlined text-4xl opacity-50">flip_to_back</span>
+                                                <span className="font-mono text-xs uppercase tracking-widest">Awaiting Inspection Frame</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

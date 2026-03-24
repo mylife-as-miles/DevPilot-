@@ -26,18 +26,19 @@ export const PatchDiff: React.FC<PatchDiffProps> = ({ filePath, patch }) => {
 
                     if (isAddition) {
                         colorClass = "text-green-400";
-                        bgClass = "bg-green-500/10 -mx-4 px-4";
+                        bgClass = "bg-green-500/10 -mx-4 px-4 py-0.5";
                     } else if (isDeletion) {
                         colorClass = "text-red-400";
-                        bgClass = "bg-red-500/10 -mx-4 px-4";
+                        bgClass = "bg-red-500/10 -mx-4 px-4 py-0.5";
                     } else if (isHeader) {
                         colorClass = "text-primary/70";
-                        bgClass = "bg-primary/5 -mx-4 px-4 font-bold italic";
+                        bgClass = "bg-primary/5 -mx-4 px-4 py-1.5 mt-2 mb-1 font-bold tracking-wide";
                     }
 
                     return (
-                        <div key={i} className={`${bgClass} whitespace-pre`}>
-                            <span className={colorClass}>{line}</span>
+                        <div key={i} className={`${bgClass} whitespace-pre table-row`}>
+                            <span className={`table-cell pr-4 opacity-30 select-none text-right w-8`}>{i + 1}</span>
+                            <span className={`${colorClass} table-cell`}>{line}</span>
                         </div>
                     );
                 })}
