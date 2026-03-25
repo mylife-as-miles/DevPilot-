@@ -160,8 +160,16 @@ Respond with JSON:
 `.trim();
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
+      model: "gemini-3.1-pro-preview",
       contents: [prompt],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        tools: [
+          { urlContext: {} },
+          { codeExecution: {} },
+          { googleSearch: {} },
+        ],
+      },
     });
 
     if (!response.text) {
