@@ -14,8 +14,11 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
     return;
   }
 
-  const targetUrl = task.targetUrl;
+  const { config } = await import("../config/env");
+  const localTargetUrl = config.targetAppBaseUrl || "http://localhost:3000";
+  const targetUrl = localTargetUrl; // Override task.targetUrl for building & run workflow
   const serverId = `server-${taskId}`;
+
 
   if (!targetUrl) {
     throw new Error("Task is missing a target URL for inspection.");
