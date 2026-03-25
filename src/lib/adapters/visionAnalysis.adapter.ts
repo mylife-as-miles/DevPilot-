@@ -44,7 +44,9 @@ export interface VisionAnalysisInput {
   screenshotBase64?: string;
   consoleErrors?: string[];
   priorMemoryHints?: string;
+  repoFiles?: Array<{ filePath: string; content: string }>;
 }
+
 
 function getAiClient(): GoogleGenAI {
   if (!config.isGeminiConfigured) {
@@ -180,10 +182,16 @@ You are DevPilot Vision Inspector — a highly advanced frontend QA intelligence
 - **Console Logs**: ${input.consoleErrors?.join("\\n") || "None"}
 - **Prior Memory**: ${input.priorMemoryHints || "None"}
 - **Visual Context**: A screenshot of the current application state is attached. Analyze it thoroughly for visual anomalies.
+- **Repository Files**: ${input.repoFiles ? "Full source code for likely components is provided below for correlation." : "No repository files provided."}
+
+${(input.repoFiles || [])
+        .map((f) => `FILE: ${f.filePath}\n${f.content.slice(0, 5000)}`) // Cap content to prevent token overflow
+        .join("\n\n====\n\n")}
 
 ---
 
 # Robustness & Error Handling
+- **Correlation**: If repository files are provided, cross-reference visual symptoms (e.g., a specific button color or layout gap) with the CSS/JSX in the files to identify the EXACT line number or property causing the issue.
 - **No Screenshot**: If no screenshot is provided, rely on console logs and task context alone. Set confidence below 0.5.
 - **No Console Errors**: If console is clean, focus purely on visual analysis. Do NOT fabricate errors.
 - **Ambiguous Defects**: If the issue cannot be confidently identified, return issueType "unknown" with a low confidence score and explain the ambiguity.
@@ -216,6 +224,7 @@ Respond with ONLY valid JSON matching this structure. No markdown, no commentary
 
     const contents = [prompt];
     const screenshotPart = imagePart(input.screenshotBase64);
+
     if (screenshotPart) {
       contents.push(screenshotPart as never);
     }

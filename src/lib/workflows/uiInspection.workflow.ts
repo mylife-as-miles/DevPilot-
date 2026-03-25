@@ -215,15 +215,50 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       "Requesting Gemini vision analysis...",
     );
 
-    const analysis = await visionAnalysisAdapter.analyzeUi({
-      taskTitle: task.title,
-      targetUrl: liveSession.currentUrl,
-      viewportWidth: liveSession.viewportInfo.width,
-      viewportHeight: liveSession.viewportInfo.height,
-      screenshotBase64,
-      consoleErrors: liveSession.consoleLogs,
-      priorMemoryHints,
-    });
+    const analysis = await (async () => {
+      // Fetch likely relevant files to provide context to Gemini
+      let repoFiles: Array<{ filePath: string; content: string }> = [];
+      try {
+        const { gitlabRepositoryAdapter } = await import("../adapters/gitlabRepository.adapter");
+        const treeResult = await gitlabRepositoryAdapter.listRepositoryTree(task.gitlabProjectId, task.branch);
+
+        if (treeResult.success && treeResult.data) {
+          // Filter for relevant files (components, pages, styles)
+          const relevantPaths = treeResult.data
+            .filter(f => f.type === 'blob' && (
+              f.path.includes('src/components') ||
+              f.path.includes('src/pages') ||
+              f.path.includes('src/App') ||
+              f.path.includes('.css') ||
+              f.path.includes('.scss')
+            ))
+            .slice(0, 15); // limit to top 15 most relevant
+
+          const fetchedFiles = await Promise.all(
+            relevantPaths.map(async (f) => {
+              const contentResult = await gitlabRepositoryAdapter.getFileContent(f.path, task.gitlabProjectId, task.branch);
+              return contentResult.success ? { filePath: f.path, content: contentResult.data.content } : null;
+            })
+          );
+          repoFiles = fetchedFiles.filter((f): f is { filePath: string; content: string } => f !== null);
+        }
+      } catch (e) {
+        console.warn("Failed to fetch repository files for vision analysis context:", e);
+      }
+
+
+      return visionAnalysisAdapter.analyzeUi({
+        taskTitle: task.title,
+        targetUrl: liveSession.currentUrl,
+        viewportWidth: liveSession.viewportInfo.width,
+        viewportHeight: liveSession.viewportInfo.height,
+        screenshotBase64,
+        consoleErrors: liveSession.consoleLogs,
+        priorMemoryHints,
+        repoFiles,
+      });
+    })();
+
 
     await taskService.updateTaskArtifact(
       taskId,
