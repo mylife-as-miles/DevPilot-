@@ -15,6 +15,7 @@ export class BootstrapService {
             repoRoot: analysis.repoRoot,
             appRoot: analysis.appRoot,
             installRoot: analysis.installRoot,
+            runtimeTargetUrl: this.resolveRuntimeTargetUrl(commandPlan.devCommandUsed, commandPlan.previewCommandUsed),
             framework: analysis.framework.framework,
             packageManager: analysis.packageManager,
             detectedLockfile: analysis.detectedLockfile,
@@ -29,6 +30,20 @@ export class BootstrapService {
             warnings,
             success,
         };
+    }
+
+    private resolveRuntimeTargetUrl(
+        devCommandUsed: string | null,
+        previewCommandUsed: string | null,
+    ): string {
+        const command = devCommandUsed || previewCommandUsed || "";
+        const portMatch =
+            command.match(/--port\s+(\d{2,5})/) ||
+            command.match(/--port=(\d{2,5})/) ||
+            command.match(/(?:^|\s)-p\s+(\d{2,5})(?:\s|$)/);
+        const port = portMatch?.[1] || "3000";
+
+        return `http://127.0.0.1:${port}`;
     }
 }
 

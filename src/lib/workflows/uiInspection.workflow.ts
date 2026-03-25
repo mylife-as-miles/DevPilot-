@@ -15,14 +15,8 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
   }
 
   const { config } = await import("../config/env");
-  const localTargetUrl = config.targetAppBaseUrl || "http://localhost:3000";
-  const targetUrl = localTargetUrl; // Override task.targetUrl for building & run workflow
+  let targetUrl = "http://127.0.0.1:3000";
   const serverId = `server-${taskId}`;
-
-
-  if (!targetUrl) {
-    throw new Error("Task is missing a target URL for inspection.");
-  }
 
   const preset = task.viewportPreset || "desktop";
   const viewport = VIEWPORT_PRESETS[preset] || VIEWPORT_PRESETS.desktop;
@@ -115,9 +109,14 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
         throw new Error("GitLab project URL is missing from task.");
       }
       bootstrapMetadata = await sandboxAdapter.setupWorkspace(gitlabUrl, task.branch, coreConfig.gitlabToken);
+      targetUrl = bootstrapMetadata.runtimeTargetUrl;
+      await taskService.updateTask(taskId, {
+        sandboxUrl: config.sandboxUrl,
+        inspectionTargetUrl: targetUrl,
+      });
       console.log(
         `[WORKFLOW] Sandbox workspace ready for ${gitlabUrl} @ ${task.branch}. ` +
-        `appRoot=${bootstrapMetadata.appRoot}, framework=${bootstrapMetadata.framework}, packageManager=${bootstrapMetadata.packageManager}`,
+        `appRoot=${bootstrapMetadata.appRoot}, framework=${bootstrapMetadata.framework}, packageManager=${bootstrapMetadata.packageManager}, runtimeTargetUrl=${targetUrl}`,
       );
     } catch (e: any) {
       throw new Error(`Failed to setup sandbox workspace: ${e.message}`);

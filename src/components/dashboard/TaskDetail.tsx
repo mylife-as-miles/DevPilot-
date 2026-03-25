@@ -332,6 +332,8 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
 
     const screenshotSrc = toImageSrc(browserArtifact?.content);
     const viewportLabel = task.viewportPreset === "mobile" ? "375x812" : task.viewportPreset === "tablet" ? "768x1024" : "1280x800";
+    const liveSessionUrl = task.sandboxUrl || config.sandboxUrl || "http://localhost:8080";
+    const inspectionTargetUrl = task.inspectionTargetUrl || task.targetUrl || "http://127.0.0.1:3000";
     const projectOptions = projects.length > 0 ? projects : [task.repo];
     const branchOptions = Array.from(new Set([task.branch, task.defaultBranch, ...branches].filter(Boolean)));
     const browserSummary = verificationResult?.summary || parsedVerification?.summary || parsedVision?.summary || "Waiting for live inspection evidence.";
@@ -710,8 +712,8 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
                                                 </div>
                                                 <span className="text-slate-500 text">|</span>
                                                 <div className="text-[11px] text-slate-300 font-mono tracking-tight font-medium flex items-center gap-1.5">
-                                                    <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
-                                                    {task.targetUrl || "http://localhost:3000"}
+                                                    <span className="material-symbols-outlined text-[14px] text-slate-500">hub</span>
+                                                    {liveSessionUrl}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
@@ -743,8 +745,8 @@ export const TaskDetail: React.FC<TaskDetailProps> = ({
                                                 </div>
                                                 <span className="text-slate-500 text">|</span>
                                                 <div className="text-[11px] text-slate-300 font-mono tracking-tight font-medium flex items-center gap-1.5">
-                                                    <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
-                                                    {task.targetUrl || "http://localhost:3000"}
+                                                    <span className="material-symbols-outlined text-[14px] text-slate-500">lan</span>
+                                                    {inspectionTargetUrl}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">

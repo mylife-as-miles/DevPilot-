@@ -39,6 +39,7 @@ export interface SandboxSetupResponse {
   repoRoot: string;
   appRoot: string;
   installRoot: string;
+  runtimeTargetUrl: string;
   framework: "vite" | "nextjs" | "react-spa" | "node";
   packageManager: "npm" | "pnpm" | "yarn";
   detectedLockfile: "pnpm-lock.yaml" | "package-lock.json" | "yarn.lock" | null;
@@ -243,4 +244,3 @@ export const sandboxAdapter = {
     return (await response.json()) as SandboxSetupResponse;
   },
 };
-

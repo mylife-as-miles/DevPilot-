@@ -75,6 +75,7 @@ export interface BootstrapMetadata {
     repoRoot: string;
     appRoot: string;
     installRoot: string;
+    runtimeTargetUrl: string;
     framework: FrameworkType;
     packageManager: PackageManager;
     detectedLockfile: LockfileName | null;

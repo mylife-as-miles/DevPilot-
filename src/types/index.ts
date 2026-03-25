@@ -11,6 +11,8 @@ export interface Task {
   plusCount: number;
   minusCount: number;
   targetUrl?: string;
+  sandboxUrl?: string;
+  inspectionTargetUrl?: string;
   viewportPreset?: "desktop" | "tablet" | "mobile";
   viewportWidth?: number;
   viewportHeight?: number;

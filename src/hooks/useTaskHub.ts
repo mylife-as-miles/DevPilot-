@@ -216,6 +216,7 @@ export const useTaskHub = () => {
                 plusCount: 0,
                 minusCount: 0,
                 targetUrl: userConfig.targetAppBaseUrl,
+                sandboxUrl: config.sandboxUrl,
                 viewportPreset: "desktop",
                 inspectionStatus: "idle",
                 codeFixStatus: "idle",
@@ -239,7 +240,10 @@ export const useTaskHub = () => {
             await taskService.appendAgentMessage({
                 taskId,
                 sender: "system",
-                content: `Created live task for ${integrationState.project.pathWithNamespace}@${selectedBranch}. Target URL: ${userConfig.targetAppBaseUrl}`,
+                content:
+                    `Created live task for ${integrationState.project.pathWithNamespace}@${selectedBranch}.\n` +
+                    `Sandbox URL: ${config.sandboxUrl}\n` +
+                    `Configured App URL: ${userConfig.targetAppBaseUrl}`,
                 kind: "info",
                 timestamp: now,
             });
