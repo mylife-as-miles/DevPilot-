@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Header } from "./components/layout/Header";
 import { Footer } from "./components/layout/Footer";
 import { DashboardHeroComposer } from "./components/DashboardHeroComposer";
@@ -29,9 +29,33 @@ type Page =
   | "support";
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<Page>("dashboard");
-  const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const getInitialPage = (): Page => {
+    const hash = window.location.hash.replace("#", "");
+    const validPages: Page[] = ["dashboard", "task_detail", "documentation", "changelog", "settings", "privacy", "terms", "support"];
+    return validPages.includes(hash as Page) ? (hash as Page) : "dashboard";
+  };
+
+  const getInitialTask = (): string | null => {
+    const searchParams = new URLSearchParams(window.location.search);
+    return searchParams.get("taskId");
+  };
+
+  const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
+  const [selectedTask, setSelectedTask] = useState<string | null>(getInitialTask());
   const [activeTab, setActiveTab] = useState<Task["category"]>("tasks");
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace("#", "");
+      if (hash) {
+        setCurrentPage(hash as Page);
+      } else {
+        setCurrentPage("dashboard");
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   const {
     integrationState,
@@ -47,7 +71,20 @@ export default function App() {
 
   const navigate = (page: Page, taskId?: string) => {
     setCurrentPage(page);
-    if (taskId) setSelectedTask(taskId);
+    window.location.hash = page;
+
+    if (taskId) {
+      setSelectedTask(taskId);
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set("taskId", taskId);
+      window.history.replaceState({}, "", newUrl.toString());
+    } else {
+      const newUrl = new URL(window.location.href);
+      if (newUrl.searchParams.has("taskId")) {
+        newUrl.searchParams.delete("taskId");
+        window.history.replaceState({}, "", newUrl.toString());
+      }
+    }
   };
 
   const handleCreateTask = async (prompt: string) => {
