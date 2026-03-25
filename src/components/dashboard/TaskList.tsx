@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { taskService } from "../../lib/services";
 import { Task } from "../../types";
+import { CodeReviewIssueList } from "./CodeReviewIssueList";
 
 interface TaskItemProps {
     id: string;
@@ -96,9 +97,14 @@ const getTaskGroup = (timestamp: number) => {
 interface TaskListProps {
     onSelectTask: (id: string) => void;
     activeTab: Task["category"];
+    onSelectCodeReviewIssue?: (id: string) => void;
 }
 
-export const TaskList: React.FC<TaskListProps> = ({ onSelectTask, activeTab }) => {
+export const TaskList: React.FC<TaskListProps> = ({ onSelectTask, activeTab, onSelectCodeReviewIssue }) => {
+    if (activeTab === "code_reviews" && onSelectCodeReviewIssue) {
+        return <CodeReviewIssueList onSelectIssue={onSelectCodeReviewIssue} />;
+    }
+
     const [searchQuery, setSearchQuery] = useState("");
     const dbTasks = useLiveQuery(() => taskService.getTasksByCategory(activeTab), [activeTab]);
 

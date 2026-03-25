@@ -1,11 +1,93 @@
 import { VIEWPORT_PRESETS } from "../adapters/browserAutomation.adapter";
+import {
+  ExecutionResult,
+  sandboxAdapter,
+} from "../adapters/sandbox.adapter";
 import { gitlabDuoAdapter } from "../adapters/gitlabDuo.adapter";
-import { sandboxAdapter } from "../adapters/sandbox.adapter";
 import { visionAnalysisAdapter } from "../adapters/visionAnalysis.adapter";
 import { taskService } from "../services";
 import { memoryService } from "../services/memory.service";
 import { runService } from "../services/run.service";
 import { runPlanCodeFixWorkflow } from "./planCodeFix.workflow";
+
+const MAX_FAILURE_EVIDENCE_LINES = 14;
+const MAX_CONSOLE_EVIDENCE_LINES = 40;
+
+type InspectionStage = "install" | "build";
+
+interface InspectionAnalysis {
+  summary?: string;
+  issueType?: string;
+  severity?: string;
+  suspectedComponent?: string;
+  explanation?: string;
+  recommendedFix?: string;
+  confidence?: number;
+  evidence?: string[];
+  suggestedTags?: string[];
+}
+
+function combineExecutionOutput(result: ExecutionResult): string {
+  return [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n\n").trim();
+}
+
+function extractEvidenceLines(output: string, maxLines: number): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-maxLines);
+}
+
+function toConsoleEvidence(output: string): string[] {
+  return extractEvidenceLines(output, MAX_CONSOLE_EVIDENCE_LINES);
+}
+
+function extractReferencedPaths(output: string): string[] {
+  const matches =
+    output.match(/(?:\.{0,2}\/)?[A-Za-z0-9@._/-]+\.(?:tsx?|jsx?|css|scss|mjs|cjs|json)/g) ||
+    [];
+
+  return Array.from(new Set(matches.filter((match) => match.includes("/")))).slice(0, 6);
+}
+
+function toFallbackInspectionAnalysis(args: {
+  command: string;
+  output: string;
+  stage: InspectionStage;
+  targetUrl: string;
+}): InspectionAnalysis {
+  const evidence = extractEvidenceLines(args.output, MAX_FAILURE_EVIDENCE_LINES);
+  const filePaths = extractReferencedPaths(args.output);
+  const suspectedComponent = filePaths[0]
+    ? filePaths[0].split("/").pop()?.replace(/\.[^.]+$/, "") || filePaths[0]
+    : "application-bootstrap";
+  const failureLabel = args.stage === "install" ? "dependency installation" : "production build";
+
+  return {
+    summary:
+      args.stage === "install"
+        ? `Dependencies failed to install, so the sandbox never reached ${args.targetUrl}.`
+        : `The application failed during build, so DevPilot could not open ${args.targetUrl}.`,
+    issueType: args.stage === "install" ? "console_error" : "rendering_failure",
+    severity: "high",
+    suspectedComponent,
+    explanation:
+      `Inspection switched to log-only mode because '${args.command}' exited with a non-zero status during sandbox preparation. ` +
+      `The terminal output points to ${failureLabel} blockers that must be resolved before a live browser session can start.`,
+    recommendedFix:
+      args.stage === "install"
+        ? "Resolve the dependency or package-manager errors in the captured terminal output, then rerun inspection."
+        : "Fix the build-time compile or prerender errors in the captured terminal output, then rerun inspection.",
+    confidence: 0.9,
+    evidence,
+    suggestedTags: [
+      "inspection-blocker",
+      "sandbox-preflight",
+      args.stage === "install" ? "dependency-install" : "build-failure",
+    ],
+  };
+}
 
 export const runUiInspectionWorkflow = async (taskId: string) => {
   const task = await taskService.getTaskById(taskId);
@@ -41,7 +123,6 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       label: "Launch Browser",
       detail: "Initializing the sandbox browser...",
     },
-
     {
       key: "capture_ui",
       label: "Capture UI",
@@ -81,6 +162,10 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
     ),
   );
 
+  let currentStepIndex = 0;
+  let terminalArtifactId: string | undefined;
+  let screenshotArtifactId: string | undefined;
+
   const completeStep = async (index: number, detail: string) => {
     await runService.updateRunStepStatus(stepRecords[index], "completed", detail);
     await runService.updateAgentRunProgress(
@@ -90,25 +175,45 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
     );
   };
 
+  const markStepRunning = async (index: number, detail: string) => {
+    currentStepIndex = index;
+    await runService.updateRunStepStatus(stepRecords[index], "running", detail);
+  };
+
+  const markBrowserStepsSkipped = async (reason: string) => {
+    await runService.updateRunStepStatus(stepRecords[1], "completed", reason);
+    await runService.updateRunStepStatus(stepRecords[2], "completed", reason);
+    await runService.updateAgentRunProgress(
+      run.id,
+      3,
+      workflowSteps[3]?.detail || "Looking for related verified fixes...",
+    );
+  };
+
   try {
     let bootstrapMetadata:
       | Awaited<ReturnType<typeof sandboxAdapter.setupWorkspace>>
       | null = null;
+    let consoleEvidence: string[] = [];
+    let screenshotBase64: string | undefined;
+    let fallbackAnalysis: InspectionAnalysis | null = null;
 
-    await runService.updateRunStepStatus(
-      stepRecords[0],
-      "running",
+    await markStepRunning(
+      0,
       "Setting up sandbox workspace (cloning repository)...",
     );
 
-    // 0. Setup Workspace (Clone repo)
     try {
       const { config: coreConfig } = await import("../config/env");
       const gitlabUrl = task.gitlabProjectWebUrl || task.repo;
       if (!gitlabUrl) {
         throw new Error("GitLab project URL is missing from task.");
       }
-      bootstrapMetadata = await sandboxAdapter.setupWorkspace(gitlabUrl, task.branch, coreConfig.gitlabToken);
+      bootstrapMetadata = await sandboxAdapter.setupWorkspace(
+        gitlabUrl,
+        task.branch,
+        coreConfig.gitlabToken,
+      );
       targetUrl = bootstrapMetadata.runtimeTargetUrl;
       await taskService.updateTask(taskId, {
         sandboxUrl: config.sandboxUrl,
@@ -116,101 +221,159 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       });
       console.log(
         `[WORKFLOW] Sandbox workspace ready for ${gitlabUrl} @ ${task.branch}. ` +
-        `appRoot=${bootstrapMetadata.appRoot}, framework=${bootstrapMetadata.framework}, packageManager=${bootstrapMetadata.packageManager}, runtimeTargetUrl=${targetUrl}`,
+          `appRoot=${bootstrapMetadata.appRoot}, framework=${bootstrapMetadata.framework}, ` +
+          `packageManager=${bootstrapMetadata.packageManager}, runtimeTargetUrl=${targetUrl}`,
       );
-    } catch (e: any) {
-      throw new Error(`Failed to setup sandbox workspace: ${e.message}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to setup sandbox workspace: ${message}`);
     }
 
-
-    await runService.updateRunStepStatus(
-      stepRecords[0],
-      "running",
-      `Running '${bootstrapMetadata?.installCommandUsed ?? "install"}' and '${bootstrapMetadata?.buildCommandUsed ?? "build"}'...`,
-    );
-
-
-    // 1. Build the app
-    await sandboxAdapter.executeCommand("npm install");
-    const buildResult = await sandboxAdapter.executeCommand("npm run build");
-
-    if (buildResult.exitCode !== 0) {
-      throw new Error(`Build failed: ${buildResult.stderr}`);
-    }
-
-    await completeStep(0, "Application built successfully.");
-
-    // 2. Start the server (using 'npm run dev' or 'npm run preview')
+    const installCommand = bootstrapMetadata?.installCommandUsed || "npm install";
+    const buildCommand = bootstrapMetadata?.buildCommandUsed;
     const runtimeCommand =
-      bootstrapMetadata?.devCommandUsed ||
-      bootstrapMetadata?.previewCommandUsed ||
-      "npm run dev";
-    await sandboxAdapter.startBackgroundCommand(serverId, runtimeCommand);
+      bootstrapMetadata?.devCommandUsed || bootstrapMetadata?.previewCommandUsed;
 
+    const switchToLogOnlyInspection = async (
+      stage: InspectionStage,
+      command: string,
+      result: ExecutionResult,
+    ) => {
+      const output =
+        combineExecutionOutput(result) ||
+        `${stage === "install" ? "Dependency installation" : "Build"} failed while running '${command}'.`;
 
-    // 3. Poll for readiness
-    const readiness = await sandboxAdapter.waitForUrl(targetUrl, 60000, 2000);
-
-    if (!readiness.ready) {
-      await sandboxAdapter.stopBackgroundCommand(serverId);
-      throw new Error(
-        `Server at ${targetUrl} did not become ready after 60s. ` +
-        `Last error: ${readiness.lastError || "unknown"}`
+      terminalArtifactId = await taskService.updateTaskArtifact(
+        taskId,
+        "terminal",
+        output,
       );
+      consoleEvidence = toConsoleEvidence(output);
+      fallbackAnalysis = toFallbackInspectionAnalysis({
+        command,
+        output,
+        stage,
+        targetUrl,
+      });
+      await taskService.updateTaskArtifact(
+        taskId,
+        "vision_analysis",
+        JSON.stringify(fallbackAnalysis, null, 2),
+      );
+      await runService.createAgentEvent({
+        taskId,
+        source: "orchestrator",
+        type: "ARTIFACT_UPDATED",
+        title:
+          stage === "install"
+            ? "Dependency failure captured"
+            : "Build failure captured",
+        description:
+          "Stored terminal output and generated fallback inspection evidence for planning.",
+        metadata: JSON.stringify({ terminalArtifactId }),
+        timestamp: Date.now(),
+      });
+      await taskService.appendAgentMessage({
+        taskId,
+        sender: "system",
+        content:
+          `${stage === "install" ? "Dependency installation" : "Build"} failed while running '${command}'. ` +
+          "Continuing with log-only inspection.",
+        kind: "warning",
+        artifactIds: [terminalArtifactId],
+        timestamp: Date.now(),
+      });
+      await completeStep(
+        0,
+        `${stage === "install" ? "Dependency installation" : "Build"} failed. Continuing with log-only inspection.`,
+      );
+      await markBrowserStepsSkipped(
+        "Skipped because the application never reached a runnable state.",
+      );
+    };
+
+    await markStepRunning(
+      0,
+      buildCommand
+        ? `Running '${installCommand}' and '${buildCommand}'...`
+        : `Running '${installCommand}'...`,
+    );
+
+    const installResult = await sandboxAdapter.executeCommand(installCommand);
+    if (installResult.exitCode !== 0) {
+      await switchToLogOnlyInspection("install", installCommand, installResult);
+    } else if (buildCommand) {
+      const buildResult = await sandboxAdapter.executeCommand(buildCommand);
+
+      if (buildResult.exitCode !== 0) {
+        await switchToLogOnlyInspection("build", buildCommand, buildResult);
+      }
     }
 
-    await runService.updateRunStepStatus(
-      stepRecords[1],
-      "running",
-      "Launching sandbox session...",
-    );
+    if (!fallbackAnalysis) {
+      await completeStep(
+        0,
+        buildCommand
+          ? "Application built successfully."
+          : "Dependencies installed successfully.",
+      );
 
+      if (!runtimeCommand) {
+        throw new Error(
+          "No runtime command could be resolved for the detected application.",
+        );
+      }
 
-    // TODO: Determine if we need to start a server or use existing
-    // For now we assume the environment handles the serving or we start it here
-    // If it's a dev server, we might need a non-blocking start.
+      await sandboxAdapter.startBackgroundCommand(serverId, runtimeCommand);
 
-    const sandboxSession = await sandboxAdapter.createSession({
-      id: taskId,
-      targetUrl,
-      viewport,
-    });
-    await completeStep(1, "Sandbox session established.");
+      const readiness = await sandboxAdapter.waitForUrl(targetUrl, 60000, 2000);
 
-    await runService.updateRunStepStatus(
-      stepRecords[2],
-      "running",
-      "Capturing screenshot and console logs...",
-    );
-    const screenshotBase64 = await sandboxAdapter.captureScreenshot(taskId);
-    const liveSession = (await sandboxAdapter.getSession(taskId)) || sandboxSession;
+      if (!readiness.ready) {
+        await sandboxAdapter.stopBackgroundCommand(serverId);
+        throw new Error(
+          `Server at ${targetUrl} did not become ready after 60s. ` +
+            `Last error: ${readiness.lastError || "unknown"}`,
+        );
+      }
 
-    const terminalArtifactId = await taskService.updateTaskArtifact(
-      taskId,
-      "terminal",
-      liveSession.consoleLogs.join("\n"),
-    );
-    const screenshotArtifactId = await taskService.updateTaskArtifact(
-      taskId,
-      "screenshot",
-      screenshotBase64,
-    );
-    await runService.createAgentEvent({
-      taskId,
-      source: "orchestrator",
-      type: "ARTIFACT_UPDATED",
-      title: "Inspection evidence captured",
-      description: "Stored the live screenshot and console log artifacts.",
-      metadata: JSON.stringify({ terminalArtifactId, screenshotArtifactId }),
-      timestamp: Date.now(),
-    });
-    await completeStep(2, `Captured ${liveSession.currentUrl}.`);
+      await markStepRunning(1, "Launching sandbox session...");
 
-    await runService.updateRunStepStatus(
-      stepRecords[3],
-      "running",
-      "Searching historical memory...",
-    );
+      const sandboxSession = await sandboxAdapter.createSession({
+        id: taskId,
+        targetUrl,
+        viewport,
+      });
+      await completeStep(1, "Sandbox session established.");
+
+      await markStepRunning(2, "Capturing screenshot and console logs...");
+      screenshotBase64 = await sandboxAdapter.captureScreenshot(taskId);
+      const liveSession =
+        (await sandboxAdapter.getSession(taskId)) || sandboxSession;
+
+      consoleEvidence = liveSession.consoleLogs;
+      terminalArtifactId = await taskService.updateTaskArtifact(
+        taskId,
+        "terminal",
+        liveSession.consoleLogs.join("\n"),
+      );
+      screenshotArtifactId = await taskService.updateTaskArtifact(
+        taskId,
+        "screenshot",
+        screenshotBase64,
+      );
+      await runService.createAgentEvent({
+        taskId,
+        source: "orchestrator",
+        type: "ARTIFACT_UPDATED",
+        title: "Inspection evidence captured",
+        description: "Stored the live screenshot and console log artifacts.",
+        metadata: JSON.stringify({ terminalArtifactId, screenshotArtifactId }),
+        timestamp: Date.now(),
+      });
+      await completeStep(2, `Captured ${liveSession.currentUrl}.`);
+    }
+
+    await markStepRunning(3, "Searching historical memory...");
     const memory = await memoryService.getRelevantMemoryForTask(taskId);
     let priorMemoryHints = "";
     if (memory) {
@@ -229,100 +392,145 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       "normalize_findings",
       "ui_inspector",
     );
-    await runService.updateRunStepStatus(
-      stepRecords[4],
-      "running",
-      "Requesting Gemini vision analysis...",
+    await markStepRunning(
+      4,
+      fallbackAnalysis
+        ? "Summarizing terminal evidence for planning..."
+        : "Requesting Gemini vision analysis...",
     );
 
-    const analysis = await (async () => {
-      // Fetch likely relevant files to provide context to Gemini
-      let repoFiles: Array<{ filePath: string; content: string }> = [];
-      try {
-        const { gitlabRepositoryAdapter } = await import("../adapters/gitlabRepository.adapter");
-        const treeResult = await gitlabRepositoryAdapter.listRepositoryTree(task.gitlabProjectId, task.branch);
-
-        if (treeResult.success && treeResult.data) {
-          // Filter for relevant files (components, pages, styles)
-          const relevantPaths = treeResult.data
-            .filter(f => f.type === 'blob' && (
-              f.path.includes('src/components') ||
-              f.path.includes('src/pages') ||
-              f.path.includes('src/App') ||
-              f.path.includes('.css') ||
-              f.path.includes('.scss')
-            ))
-            .slice(0, 15); // limit to top 15 most relevant
-
-          const fetchedFiles = await Promise.all(
-            relevantPaths.map(async (f) => {
-              const contentResult = await gitlabRepositoryAdapter.getFileContent(f.path, task.gitlabProjectId, task.branch);
-              return contentResult.success ? { filePath: f.path, content: contentResult.data.content } : null;
-            })
+    const analysis: InspectionAnalysis =
+      fallbackAnalysis ||
+      (await (async () => {
+        let repoFiles: Array<{ filePath: string; content: string }> = [];
+        try {
+          const { gitlabRepositoryAdapter } = await import(
+            "../adapters/gitlabRepository.adapter"
           );
-          repoFiles = fetchedFiles.filter((f): f is { filePath: string; content: string } => f !== null);
+          const treeResult = await gitlabRepositoryAdapter.listRepositoryTree(
+            task.gitlabProjectId,
+            task.branch,
+          );
+
+          if (treeResult.success && treeResult.data) {
+            const relevantPaths = treeResult.data
+              .filter(
+                (file) =>
+                  file.type === "blob" &&
+                  (file.path.includes("src/components") ||
+                    file.path.includes("src/pages") ||
+                    file.path.includes("src/App") ||
+                    file.path.includes(".css") ||
+                    file.path.includes(".scss")),
+              )
+              .slice(0, 15);
+
+            const fetchedFiles = await Promise.all(
+              relevantPaths.map(async (file) => {
+                const contentResult =
+                  await gitlabRepositoryAdapter.getFileContent(
+                    file.path,
+                    task.gitlabProjectId,
+                    task.branch,
+                  );
+                return contentResult.success
+                  ? { filePath: file.path, content: contentResult.data.content }
+                  : null;
+              }),
+            );
+            repoFiles = fetchedFiles.filter(
+              (
+                file,
+              ): file is {
+                filePath: string;
+                content: string;
+              } => file !== null,
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "Failed to fetch repository files for vision analysis context:",
+            error,
+          );
         }
-      } catch (e) {
-        console.warn("Failed to fetch repository files for vision analysis context:", e);
-      }
 
-
-      return visionAnalysisAdapter.analyzeUi({
-        taskTitle: task.title,
-        targetUrl: liveSession.currentUrl,
-        viewportWidth: liveSession.viewportInfo.width,
-        viewportHeight: liveSession.viewportInfo.height,
-        screenshotBase64,
-        consoleErrors: liveSession.consoleLogs,
-        priorMemoryHints,
-        repoFiles,
-      });
-    })();
-
+        return visionAnalysisAdapter.analyzeUi({
+          taskTitle: task.title,
+          targetUrl,
+          viewportWidth: viewport.width,
+          viewportHeight: viewport.height,
+          screenshotBase64,
+          consoleErrors: consoleEvidence,
+          priorMemoryHints,
+          repoFiles,
+        });
+      })());
 
     await taskService.updateTaskArtifact(
       taskId,
       "vision_analysis",
       JSON.stringify(analysis, null, 2),
     );
+
+    const artifactIds = [screenshotArtifactId, terminalArtifactId].filter(
+      (artifactId): artifactId is string => Boolean(artifactId),
+    );
     await taskService.appendAgentMessage({
       taskId,
       sender: "devpilot",
-      content: `Vision analysis complete: detected ${analysis.issueType}. Recommended fix: ${analysis.recommendedFix}`,
-      kind: analysis.severity === "high" ? "warning" : "info",
-      artifactIds: [screenshotArtifactId, terminalArtifactId],
+      content: fallbackAnalysis
+        ? `Inspection complete in log-only mode: ${analysis.summary || "Build failure evidence is ready for code-fix planning."}`
+        : `Vision analysis complete: detected ${analysis.issueType}. Recommended fix: ${analysis.recommendedFix}`,
+      kind:
+        fallbackAnalysis || analysis.severity === "high" ? "warning" : "info",
+      artifactIds,
       timestamp: Date.now(),
     });
-    await completeStep(4, "Vision analysis generated.");
-
-    await runService.updateRunStepStatus(
-      stepRecords[5],
-      "running",
-      "Finalizing inspection artifacts...",
+    await completeStep(
+      4,
+      fallbackAnalysis
+        ? "Fallback analysis generated from terminal output."
+        : "Vision analysis generated.",
     );
+
+    await markStepRunning(5, "Finalizing inspection artifacts...");
     await taskService.updateTask(taskId, {
       inspectionStatus: "completed",
       lastInspectionAt: Date.now(),
     });
-    await completeStep(5, "Inspection finished.");
+    await completeStep(
+      5,
+      fallbackAnalysis
+        ? "Inspection finished in log-only mode."
+        : "Inspection finished.",
+    );
 
     await taskService.appendAgentMessage({
       taskId,
       sender: "system",
-      content: "Inspection complete. Proceeding to code fix generation.",
+      content: fallbackAnalysis
+        ? "Inspection complete in log-only mode. Proceeding to code fix generation."
+        : "Inspection complete. Proceeding to code fix generation.",
       kind: "success",
       timestamp: Date.now(),
     });
 
-    // Clean up server
     await sandboxAdapter.stopBackgroundCommand(serverId);
-
-
     await sandboxAdapter.closeSession(taskId);
     await runPlanCodeFixWorkflow(taskId);
   } catch (error) {
-
     const message = error instanceof Error ? error.message : String(error);
+    await runService.updateRunStepStatus(
+      stepRecords[currentStepIndex],
+      "failed",
+      message,
+    );
+    await runService.updateAgentRunProgress(
+      run.id,
+      currentStepIndex,
+      "Inspection error.",
+      "failed",
+    );
     await taskService.updateTask(taskId, { inspectionStatus: "failed" });
     await runService.createAgentEvent({
       taskId,
@@ -338,13 +546,11 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       sender: "system",
       content: `Inspection workflow failed: ${message}`,
       kind: "warning",
+      artifactIds: terminalArtifactId ? [terminalArtifactId] : undefined,
       timestamp: Date.now(),
     });
 
-    // Clean up server
-    await sandboxAdapter.stopBackgroundCommand(serverId).catch(() => { });
-
-
+    await sandboxAdapter.stopBackgroundCommand(serverId).catch(() => {});
     await sandboxAdapter.closeSession(taskId);
   }
 };

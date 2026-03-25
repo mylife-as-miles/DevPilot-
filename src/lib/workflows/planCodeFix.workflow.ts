@@ -1,6 +1,7 @@
 import { codeAgentAdapter } from "../adapters/codeAgent.adapter";
 import { gitlabDuoAdapter } from "../adapters/gitlabDuo.adapter";
 import { gitlabRepositoryAdapter } from "../adapters/gitlabRepository.adapter";
+import { runBackgroundCodeReviewDiscoveryWorkflow } from "./backgroundCodeReviewDiscovery.workflow";
 import { taskService, patchProposalService } from "../services";
 import { memoryService } from "../services/memory.service";
 import { runService } from "../services/run.service";
@@ -131,6 +132,17 @@ export const runPlanCodeFixWorkflow = async (taskId: string) => {
             content: `Loaded ${repositoryPaths.length} repository files for candidate matching.`,
             kind: "info",
             timestamp: Date.now(),
+        });
+        void runBackgroundCodeReviewDiscoveryWorkflow({
+            repo: task.repo,
+            repoName: task.repoName,
+            branch: task.branch || task.defaultBranch,
+            defaultBranch: task.defaultBranch,
+            gitlabProjectId: task.gitlabProjectId,
+            gitlabProjectWebUrl: task.gitlabProjectWebUrl,
+            triggerTaskId: taskId,
+            discoveryMode: "candidate_matching",
+            treeEntries: treeResult.data,
         });
         await completeStep(0, "Repository tree loaded.");
 

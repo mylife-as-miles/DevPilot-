@@ -57,6 +57,7 @@ export default function App() {
     userConfig,
     setUserConfig,
     createTask,
+    startCodeReviewIssue,
     handleProjectChange,
   } = useTaskHub();
 
@@ -93,6 +94,12 @@ export default function App() {
                 <TaskList
                   onSelectTask={(id) => navigate(`/task/${id}`)}
                   activeTab={activeTab}
+                  onSelectCodeReviewIssue={async (issueId) => {
+                    const taskId = await startCodeReviewIssue(issueId);
+                    if (taskId) {
+                      navigate(`/task/${taskId}`);
+                    }
+                  }}
                 />
               </section>
 

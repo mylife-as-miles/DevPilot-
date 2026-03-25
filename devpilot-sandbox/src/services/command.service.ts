@@ -79,14 +79,9 @@ export class CommandService {
                 }
             }
 
-            const nodeEnv = this.resolveNodeEnv(prepared.commandKind);
             const { stdout, stderr } = await execAsync(prepared.finalCommand, {
                 cwd: prepared.finalCwd,
-                env: {
-                    ...process.env,
-                    CI: "true",
-                    NODE_ENV: nodeEnv,
-                },
+                env: this.buildExecutionEnv(prepared.commandKind),
             });
 
             return {
@@ -110,11 +105,7 @@ export class CommandService {
 
         const child = exec(prepared.finalCommand, {
             cwd: prepared.finalCwd,
-            env: {
-                ...process.env,
-                CI: "true",
-                NODE_ENV: this.resolveNodeEnv(prepared.commandKind),
-            },
+            env: this.buildExecutionEnv(prepared.commandKind),
         });
 
         child.stdout?.on("data", (data) => console.log(`[${id}] ${data}`));
@@ -554,10 +545,32 @@ export class CommandService {
         });
     }
 
-    private resolveNodeEnv(commandKind: CommandKind): string {
-        return commandKind === "other"
-            ? process.env.NODE_ENV || "development"
-            : "development";
+    private buildExecutionEnv(commandKind: CommandKind): NodeJS.ProcessEnv {
+        const env: NodeJS.ProcessEnv = {
+            ...process.env,
+            CI: "true",
+        };
+
+        const nodeEnv = this.resolveNodeEnv(commandKind);
+        if (nodeEnv) {
+            env.NODE_ENV = nodeEnv;
+        }
+
+        return env;
+    }
+
+    private resolveNodeEnv(commandKind: CommandKind): string | undefined {
+        switch (commandKind) {
+            case "build":
+            case "preview":
+                return "production";
+            case "dev":
+            case "install":
+                return "development";
+            case "other":
+            default:
+                return process.env.NODE_ENV;
+        }
     }
 
     private hasPackageJson(dir: string): boolean {

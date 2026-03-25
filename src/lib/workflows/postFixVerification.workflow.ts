@@ -2,7 +2,10 @@ import { VIEWPORT_PRESETS } from "../adapters/browserAutomation.adapter";
 import {
   VerificationAnalysisInput,
 } from "../adapters/visionAnalysis.adapter";
-import { sandboxAdapter } from "../adapters/sandbox.adapter";
+import {
+  ExecutionResult,
+  sandboxAdapter,
+} from "../adapters/sandbox.adapter";
 import {
   patchProposalService,
   taskService,
@@ -48,6 +51,10 @@ function getVerificationStatus(
   return "failed";
 }
 
+function combineExecutionOutput(result: ExecutionResult): string {
+  return [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n\n").trim();
+}
+
 export async function runPostFixVerificationWorkflow(
   taskId: string,
 ): Promise<void> {
@@ -79,6 +86,8 @@ export async function runPostFixVerificationWorkflow(
   const startIndex = run.completedSteps || 0;
   const preset = task.viewportPreset || "desktop";
   const viewport = VIEWPORT_PRESETS[preset] || VIEWPORT_PRESETS.desktop;
+  let currentStepIndex = 0;
+  let failureArtifactId: string | undefined;
 
   await runService.updateAgentRunProgress(
     run.id,
@@ -145,17 +154,17 @@ export async function runPostFixVerificationWorkflow(
     );
   };
 
+  const markStepRunning = async (index: number, detail: string) => {
+    currentStepIndex = index;
+    await runService.updateRunStepStatus(stepRecords[index], "running", detail);
+  };
+
   try {
-    await runService.updateRunStepStatus(
-      stepRecords[0],
-      "running",
-      "Loading inspection artifacts and verification plan...",
-    );
+    await markStepRunning(0, "Loading inspection artifacts and verification plan...");
     await completeStep(0, "Verification context loaded.");
 
-    await runService.updateRunStepStatus(
-      stepRecords[1],
-      "running",
+    await markStepRunning(
+      1,
       "Preparing the GitLab fix branch inside the sandbox...",
     );
     await taskService.appendAgentMessage({
@@ -178,16 +187,46 @@ export async function runPostFixVerificationWorkflow(
       task.branch,
       config.gitlabToken,
     );
+    const installCommand = bootstrapMetadata.installCommandUsed;
+    const buildCommand = bootstrapMetadata.buildCommandUsed;
     const runtimeCommand =
-      bootstrapMetadata.devCommandUsed ||
-      bootstrapMetadata.previewCommandUsed ||
-      "npm run dev";
+      bootstrapMetadata.devCommandUsed || bootstrapMetadata.previewCommandUsed;
     const runtimeTargetUrl = bootstrapMetadata.runtimeTargetUrl;
 
-    await sandboxAdapter.executeCommand("npm install");
-    const buildResult = await sandboxAdapter.executeCommand("npm run build");
-    if (buildResult.exitCode !== 0) {
-      throw new Error(`Verification build failed: ${buildResult.stderr}`);
+    if (!runtimeCommand) {
+      throw new Error("No runtime command could be resolved for verification.");
+    }
+
+    const installResult = await sandboxAdapter.executeCommand(installCommand);
+    if (installResult.exitCode !== 0) {
+      const installOutput =
+        combineExecutionOutput(installResult) ||
+        `Verification dependency installation failed while running '${installCommand}'.`;
+      failureArtifactId = await taskService.updateTaskArtifact(
+        taskId,
+        "after_logs",
+        installOutput,
+      );
+      throw new Error(
+        `Verification dependency installation failed while running '${installCommand}'. Review the terminal artifact for details.`,
+      );
+    }
+
+    if (buildCommand) {
+      const buildResult = await sandboxAdapter.executeCommand(buildCommand);
+      if (buildResult.exitCode !== 0) {
+        const buildOutput =
+          combineExecutionOutput(buildResult) ||
+          `Verification build failed while running '${buildCommand}'.`;
+        failureArtifactId = await taskService.updateTaskArtifact(
+          taskId,
+          "after_logs",
+          buildOutput,
+        );
+        throw new Error(
+          `Verification build failed while running '${buildCommand}'. Review the terminal artifact for details.`,
+        );
+      }
     }
 
     await sandboxAdapter.startBackgroundCommand(serverId, runtimeCommand);
@@ -207,11 +246,7 @@ export async function runPostFixVerificationWorkflow(
     });
     await completeStep(1, `Sandbox launched at ${runtimeTargetUrl}.`);
 
-    await runService.updateRunStepStatus(
-      stepRecords[2],
-      "running",
-      "Capturing screenshot and console output...",
-    );
+    await markStepRunning(2, "Capturing screenshot and console output...");
 
     const afterScreenshotBase64 = await sandboxAdapter.captureScreenshot(taskId);
     const liveSession = await sandboxAdapter.getSession(taskId);
@@ -257,11 +292,7 @@ export async function runPostFixVerificationWorkflow(
     });
     await completeStep(2, `Captured verification evidence at ${liveSession.currentUrl}.`);
 
-    await runService.updateRunStepStatus(
-      stepRecords[3],
-      "running",
-      "Comparing before and after evidence with Gemini...",
-    );
+    await markStepRunning(3, "Comparing before and after evidence with Gemini...");
     await taskService.appendAgentMessage({
       taskId,
       sender: "system",
@@ -299,9 +330,8 @@ export async function runPostFixVerificationWorkflow(
       `Comparison complete. Resolved: ${comparisonResult.issueResolved}.`,
     );
 
-    await runService.updateRunStepStatus(
-      stepRecords[4],
-      "running",
+    await markStepRunning(
+      4,
       "Persisting verification result and updating task state...",
     );
 
@@ -456,17 +486,23 @@ export async function runPostFixVerificationWorkflow(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await runService.updateRunStepStatus(
+      stepRecords[currentStepIndex],
+      "failed",
+      message,
+    );
     await taskService.updateTask(taskId, { codeFixStatus: "failed" });
     await taskService.appendAgentMessage({
       taskId,
       sender: "system",
       content: `Verification workflow failed: ${message}`,
       kind: "warning",
+      artifactIds: failureArtifactId ? [failureArtifactId] : undefined,
       timestamp: Date.now(),
     });
     await runService.updateAgentRunProgress(
       run.id,
-      startIndex,
+      startIndex + currentStepIndex,
       "Verification error.",
       "failed",
     );

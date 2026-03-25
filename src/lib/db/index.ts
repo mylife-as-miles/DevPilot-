@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit, PatchProposal, PatchFile, VerificationPlan, VerificationResult, VerificationEvidence, DuoFlowRun, DuoAgentInvocation, GitLabRepositoryAction, GitLabMergeRequestRecord, GitLabPipelineRecord } from '../../types';
+import { Task, AgentMessage, TaskArtifact, Memory, AgentRun, AgentEvent, RunStep, TaskMemoryHit, PatchProposal, PatchFile, VerificationPlan, VerificationResult, VerificationEvidence, DuoFlowRun, DuoAgentInvocation, GitLabRepositoryAction, GitLabMergeRequestRecord, GitLabPipelineRecord, CodeReviewIssue, CodeReviewBatch } from '../../types';
 
 export class DevPilotDB extends Dexie {
   tasks!: Table<Task>;
@@ -20,6 +20,8 @@ export class DevPilotDB extends Dexie {
   gitlabRepositoryActions!: Table<GitLabRepositoryAction>;
   gitlabMergeRequestRecords!: Table<GitLabMergeRequestRecord>;
   gitlabPipelineRecords!: Table<GitLabPipelineRecord>;
+  codeReviewIssues!: Table<CodeReviewIssue>;
+  codeReviewBatches!: Table<CodeReviewBatch>;
 
   constructor() {
     super('DevPilotDB');
@@ -172,6 +174,29 @@ export class DevPilotDB extends Dexie {
       verificationPlans: 'id, taskId, proposalId',
       verificationResults: 'id, taskId, proposalId, status',
       verificationEvidences: 'id, verificationResultId, taskId, type'
+    });
+
+    this.version(10).stores({
+      tasks: 'id, category, status, createdAt',
+      agentMessages: 'id, taskId, timestamp',
+      taskArtifacts: 'id, [taskId+type]',
+      memories: 'id, scope, createdAt',
+      agentRuns: 'id, taskId, status',
+      agentEvents: 'id, taskId, timestamp',
+      runSteps: 'id, runId, taskId, order',
+      taskMemoryHits: 'id, taskId, memoryId',
+      patchProposals: 'id, taskId, status',
+      patchFiles: 'id, proposalId, taskId',
+      verificationPlans: 'id, taskId, proposalId',
+      verificationResults: 'id, taskId, proposalId, status',
+      verificationEvidences: 'id, verificationResultId, taskId, type',
+      duoFlowRuns: 'id, taskId, flowRunId, flowDefinitionId, status, createdAt',
+      duoAgentInvocations: 'id, flowRunId, taskId, agentRole, stepKey, invocationStatus',
+      gitlabRepositoryActions: 'id, taskId, proposalId, actionType, status',
+      gitlabMergeRequestRecords: 'id, taskId, proposalId, mergeRequestIid',
+      gitlabPipelineRecords: 'id, taskId, proposalId, pipelineId, status',
+      codeReviewIssues: 'id, status, category, source, repo, branch, score, createdAt, updatedAt, dedupeKey, linkedTaskId, [repo+branch], [repo+branch+category]',
+      codeReviewBatches: 'id, repo, branch, discoveryMode, createdAt, updatedAt, [repo+branch]'
     });
   }
 }

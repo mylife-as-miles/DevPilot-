@@ -5,10 +5,12 @@ import { gitlabDuoAdapter } from "../lib/adapters/gitlabDuo.adapter";
 import { config } from "../lib/config/env";
 import { initializeDb } from "../lib/seeds";
 import {
+    codeReviewIssueService,
     taskService,
     runService,
 } from "../lib/services";
 import { devpilotFlow } from "../lib/gitlab-duo/flows/devpilot.flow";
+import { runBackgroundCodeReviewDiscoveryWorkflow } from "../lib/workflows/backgroundCodeReviewDiscovery.workflow";
 import {
     GitLabBranchSummary,
     GitLabProjectSummary,
@@ -30,6 +32,21 @@ export interface IntegrationState {
 }
 
 const CONFIG_STORAGE_KEY = "devpilot_user_config";
+
+interface TaskSeed {
+    title: string;
+    prompt: string;
+    repo: string;
+    repoName?: string;
+    branch: string;
+    defaultBranch?: string;
+    gitlabProjectId?: string;
+    gitlabProjectWebUrl?: string;
+    candidateFiles?: string[];
+    componentHints?: string[];
+    sourceIssueId?: string;
+    sourceLabel?: string;
+}
 
 export const useTaskHub = () => {
     const [integrationState, setIntegrationState] = useState<IntegrationState>({
@@ -186,40 +203,72 @@ export const useTaskHub = () => {
         });
     }, [integrationState.branches, integrationState.project]);
 
-    const createTask = async (prompt: string) => {
-        if (!integrationState.ready || !integrationState.project || !selectedBranch) return null;
-
+    const createTaskFromSeed = useCallback(async (seed: TaskSeed) => {
         setDashboardError(null);
         setIsCreatingTask(true);
 
         const now = Date.now();
         const taskId = crypto.randomUUID();
+        const matchingProject = integrationState.availableProjects.find(
+            (project) => project.pathWithNamespace === seed.repo,
+        );
+        const resolvedProjectId =
+            seed.gitlabProjectId ||
+            (matchingProject ? String(matchingProject.id) : undefined) ||
+            (integrationState.project?.pathWithNamespace === seed.repo
+                ? String(integrationState.project.id)
+                : undefined);
+        const resolvedDefaultBranch =
+            seed.defaultBranch ||
+            (matchingProject ? matchingProject.defaultBranch : undefined) ||
+            integrationState.project?.defaultBranch ||
+            userConfig.gitlabDefaultBranch;
+        const resolvedRepoName =
+            seed.repoName ||
+            matchingProject?.name ||
+            integrationState.project?.name ||
+            seed.repo.split("/").pop() ||
+            seed.repo;
+        const resolvedProjectWebUrl =
+            seed.gitlabProjectWebUrl ||
+            (integrationState.project?.pathWithNamespace === seed.repo
+                ? integrationState.project.webUrl
+                : undefined);
+        const resolvedTargetUrl = userConfig.targetAppBaseUrl || config.targetAppBaseUrl;
+
+        if (!resolvedProjectId) {
+            setDashboardError(`Unable to resolve the GitLab project for ${seed.repo}.`);
+            setIsCreatingTask(false);
+            return null;
+        }
 
         try {
             await taskService.createTask({
                 id: taskId,
-                title: prompt.slice(0, 50) + (prompt.length > 50 ? "..." : ""),
-                prompt: prompt.trim(),
-                repo: integrationState.project.pathWithNamespace,
-                repoName: integrationState.project.name,
-                repoPath: integrationState.project.pathWithNamespace,
-                branch: selectedBranch,
-                baseBranch: selectedBranch,
+                title: seed.title,
+                prompt: seed.prompt.trim(),
+                repo: seed.repo,
+                repoName: resolvedRepoName,
+                repoPath: seed.repo,
+                branch: seed.branch,
+                baseBranch: seed.branch,
                 targetBranch: userConfig.gitlabDefaultBranch,
-                defaultBranch: integrationState.project.defaultBranch,
-                gitlabProjectId: String(integrationState.project.id),
-                gitlabProjectWebUrl: integrationState.project.webUrl,
+                defaultBranch: resolvedDefaultBranch,
+                gitlabProjectId: resolvedProjectId,
+                gitlabProjectWebUrl: resolvedProjectWebUrl,
                 status: "running",
                 category: "tasks",
                 createdAt: now,
                 updatedAt: now,
                 plusCount: 0,
                 minusCount: 0,
-                targetUrl: userConfig.targetAppBaseUrl,
+                targetUrl: resolvedTargetUrl,
                 sandboxUrl: config.sandboxUrl,
                 viewportPreset: "desktop",
                 inspectionStatus: "idle",
                 codeFixStatus: "idle",
+                candidateFiles: seed.candidateFiles,
+                componentHints: seed.componentHints,
             });
 
             await runService.createAgentRun({
@@ -237,13 +286,17 @@ export const useTaskHub = () => {
             });
 
             await gitlabDuoAdapter.initializeFlowRun(taskId, devpilotFlow.id);
+            const originLine = seed.sourceLabel
+                ? `Origin: ${seed.sourceLabel}${seed.sourceIssueId ? ` (${seed.sourceIssueId})` : ""}\n`
+                : "";
             await taskService.appendAgentMessage({
                 taskId,
                 sender: "system",
                 content:
-                    `Created live task for ${integrationState.project.pathWithNamespace}@${selectedBranch}.\n` +
+                    `Created live task for ${seed.repo}@${seed.branch}.\n` +
+                    originLine +
                     `Sandbox URL: ${config.sandboxUrl}\n` +
-                    `Configured App URL: ${userConfig.targetAppBaseUrl}`,
+                    `Configured App URL: ${resolvedTargetUrl}`,
                 kind: "info",
                 timestamp: now,
             });
@@ -255,7 +308,81 @@ export const useTaskHub = () => {
         } finally {
             setIsCreatingTask(false);
         }
+    }, [
+        integrationState.availableProjects,
+        integrationState.project,
+        userConfig.gitlabDefaultBranch,
+        userConfig.targetAppBaseUrl,
+    ]);
+
+    const createTask = async (prompt: string) => {
+        if (!integrationState.ready || !integrationState.project || !selectedBranch) return null;
+
+        return await createTaskFromSeed({
+            title: prompt.slice(0, 50) + (prompt.length > 50 ? "..." : ""),
+            prompt,
+            repo: integrationState.project.pathWithNamespace,
+            repoName: integrationState.project.name,
+            branch: selectedBranch,
+            defaultBranch: integrationState.project.defaultBranch,
+            gitlabProjectId: String(integrationState.project.id),
+            gitlabProjectWebUrl: integrationState.project.webUrl,
+        });
     };
+
+    const startCodeReviewIssue = useCallback(async (issueId: string) => {
+        setDashboardError(null);
+        const issue = await codeReviewIssueService.getIssueById(issueId);
+        if (!issue) {
+            setDashboardError("That code review issue could not be found.");
+            return null;
+        }
+
+        if (issue.linkedTaskId) {
+            const existingTask = await taskService.getTaskById(issue.linkedTaskId);
+            if (existingTask) {
+                await codeReviewIssueService.markIssueStarted(issue.id, existingTask.id);
+                return existingTask.id;
+            }
+        }
+
+        const taskId = await createTaskFromSeed({
+            title: issue.title,
+            prompt: issue.suggestedPrompt,
+            repo: issue.repo,
+            repoName: issue.repoName,
+            branch: issue.branch,
+            defaultBranch: issue.defaultBranch,
+            gitlabProjectId: issue.gitlabProjectId,
+            gitlabProjectWebUrl: issue.gitlabProjectWebUrl,
+            candidateFiles: issue.relatedFiles,
+            componentHints: [issue.category],
+            sourceIssueId: issue.id,
+            sourceLabel: `Background ${issue.category.replace("_", " ")} review`,
+        });
+
+        if (taskId) {
+            await codeReviewIssueService.markIssueStarted(issue.id, taskId);
+        }
+
+        return taskId;
+    }, [createTaskFromSeed]);
+
+    useEffect(() => {
+        if (!integrationState.project || !selectedBranch) {
+            return;
+        }
+
+        void runBackgroundCodeReviewDiscoveryWorkflow({
+            repo: integrationState.project.pathWithNamespace,
+            repoName: integrationState.project.name,
+            branch: selectedBranch,
+            defaultBranch: integrationState.project.defaultBranch,
+            gitlabProjectId: String(integrationState.project.id),
+            gitlabProjectWebUrl: integrationState.project.webUrl,
+            discoveryMode: "dashboard_repo_context",
+        });
+    }, [integrationState.project, selectedBranch]);
 
     return {
         integrationState,
@@ -266,6 +393,7 @@ export const useTaskHub = () => {
         userConfig,
         setUserConfig,
         createTask,
+        startCodeReviewIssue,
         handleProjectChange,
         refreshIntegration: loadIntegrationState,
     };
