@@ -1,8 +1,9 @@
 import React from "react";
 
 import { Link } from "react-router-dom";
+import { ProjectContextNav, ProjectContextNavProps } from "./ProjectContextNav";
 
-export const Header: React.FC = () => (
+export const Header: React.FC<Partial<ProjectContextNavProps>> = (props) => (
     <header className="sticky top-0 z-50 flex items-center justify-between border-b border-border-subtle bg-background-dark/50 px-4 py-3 backdrop-blur-md sm:px-6 sm:py-4">
         <Link
             to="/"
@@ -18,6 +19,11 @@ export const Header: React.FC = () => (
             </h2>
         </Link>
         <div className="flex items-center gap-4">
+            {props.projectLabel && (
+                <div className="hidden lg:block mr-2">
+                    <ProjectContextNav {...(props as ProjectContextNavProps)} />
+                </div>
+            )}
             <div className="mr-6 hidden items-center gap-6 md:flex">
                 <Link
                     to="/documentation"

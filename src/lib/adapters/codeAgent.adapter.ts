@@ -104,9 +104,12 @@ Respond with valid JSON only:
       throw new Error("Gemini returned an empty fix recommendation response.");
     }
 
-    const parsed = parseJson<Omit<NormalizedFixRecommendation, "taskId" | "sourceArtifactIds">>(
+    const parsed = parseJson<Omit<NormalizedFixRecommendation, "taskId" | "sourceArtifactIds" | "agentThought">>(
       response.text,
     );
+
+    const thoughtPart = response.candidates?.[0]?.content?.parts?.find((p) => (p as any).thought);
+    const agentThought = thoughtPart ? (thoughtPart as any).thought : undefined;
 
     return {
       taskId: input.taskId,
@@ -119,6 +122,7 @@ Respond with valid JSON only:
       tags: parsed.tags,
       securityAuditFaults: parsed.securityAuditFaults || [],
       complianceChecks: parsed.complianceChecks || [],
+      agentThought,
       confidence: parsed.confidence,
       sourceArtifactIds: [],
     };
@@ -126,7 +130,7 @@ Respond with valid JSON only:
 
   async proposePatch(
     input: PatchGenerationInput,
-  ): Promise<{ proposal: PatchProposal; files: PatchFile[] }> {
+  ): Promise<{ proposal: PatchProposal; files: PatchFile[]; agentThought?: string }> {
     const ai = getAiClient();
 
     const prompt = `
@@ -232,7 +236,10 @@ Respond with JSON:
       updatedAt: Date.now(),
     };
 
-    return { proposal, files };
+    const thoughtPart = response.candidates?.[0]?.content?.parts?.find((p) => (p as any).thought);
+    const agentThought = thoughtPart ? (thoughtPart as any).thought : undefined;
+
+    return { proposal, files, agentThought };
   },
 
   async handleFollowUp(input: {

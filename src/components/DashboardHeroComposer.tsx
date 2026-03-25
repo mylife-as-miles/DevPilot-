@@ -72,55 +72,23 @@ const HeroControlChip = ({
 );
 
 interface DashboardHeroComposerProps {
-  projectLabel: string;
-  projectPath?: string;
-  branches: string[];
-  selectedBranch: string;
-  onBranchChange: (branch: string) => void;
   onSubmit: (prompt: string) => void;
   disabled?: boolean;
   isSubmitting?: boolean;
   isReady?: boolean;
   placeholder?: string;
   helperText?: string;
-  availableProjects?: GitLabProjectSummary[];
-  onProjectChange?: (projectId: string | number) => void;
 }
 
 export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
-  projectLabel,
-  projectPath,
-  branches,
-  selectedBranch,
-  onBranchChange,
   onSubmit,
   disabled = false,
   isSubmitting = false,
   isReady = false,
   placeholder = "Describe the UI defect, repository task, or verification goal",
   helperText = "Routes through vision inspection, patch proposal, and verification before GitLab handoff.",
-  availableProjects = [],
-  onProjectChange,
 }) => {
   const [content, setContent] = useState("");
-  const [isBranchOpen, setIsBranchOpen] = useState(false);
-  const [isProjectOpen, setIsProjectOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setIsBranchOpen(false);
-        setIsProjectOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -130,7 +98,6 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
 
     onSubmit(content.trim());
     setContent("");
-    setIsBranchOpen(false);
   };
 
   return (
@@ -153,7 +120,6 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
 
         <div
           className="hero-composer-shell mt-8 w-full max-w-4xl rounded-[30px] border border-white/[0.08] bg-surface-elevated/95 p-3 backdrop-blur-xl transition-all duration-300"
-          ref={containerRef}
         >
           <div className="relative rounded-[24px] border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))]">
             <div className="absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.28),transparent)]" />
@@ -186,88 +152,8 @@ export const DashboardHeroComposer: React.FC<DashboardHeroComposerProps> = ({
               </div>
 
               {/* Repository · Branch · Run Mode — second row beneath */}
-              <div className="flex w-full flex-wrap items-stretch gap-2 sm:flex-nowrap">
-                <div className="relative">
-                  <HeroControlChip
-                    icon={Folder}
-                    label="Repository"
-                    value={projectPath || projectLabel}
-                    onClick={() => {
-                      if (disabled || availableProjects.length === 0) {
-                        return;
-                      }
-                      setIsProjectOpen((current) => !current);
-                      setIsBranchOpen(false);
-                    }}
-                    disabled={disabled || availableProjects.length === 0}
-                    accent={isProjectOpen}
-                  />
+              <div className="flex w-full flex-wrap items-stretch gap-2 justify-end sm:flex-nowrap">
 
-                  {isProjectOpen && availableProjects.length > 0 && (
-                    <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-64 rounded-2xl border border-white/[0.08] bg-[#151515] p-2 shadow-2xl">
-                      <div className="mb-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Select Project
-                      </div>
-                      <div className="max-h-60 overflow-y-auto">
-                        {availableProjects.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${p.pathWithNamespace === projectPath
-                              ? "bg-primary/10 text-primary font-semibold"
-                              : "text-slate-300 hover:bg-white/[0.06]"
-                              }`}
-                            onClick={() => {
-                              onProjectChange?.(p.id);
-                              setIsProjectOpen(false);
-                            }}
-                          >
-                            <div className="truncate font-medium">{p.name}</div>
-                            <div className="truncate text-[10px] text-slate-500">{p.pathWithNamespace}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <HeroControlChip
-                    icon={GitBranch}
-                    label="Branch"
-                    value={selectedBranch || "No branch"}
-                    onClick={() => {
-                      if (disabled || branches.length === 0) {
-                        return;
-                      }
-                      setIsBranchOpen((current) => !current);
-                      setIsProjectOpen(false);
-                    }}
-                    disabled={disabled || branches.length === 0}
-                    accent={isBranchOpen}
-                  />
-
-                  {isBranchOpen && branches.length > 0 && (
-                    <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-2xl border border-white/[0.08] bg-[#151515] p-2 shadow-2xl">
-                      {branches.map((branch) => (
-                        <button
-                          key={branch}
-                          type="button"
-                          className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${branch === selectedBranch
-                            ? "bg-primary/10 text-primary"
-                            : "text-slate-300 hover:bg-white/[0.06]"
-                            }`}
-                          onClick={() => {
-                            onBranchChange(branch);
-                            setIsBranchOpen(false);
-                          }}
-                        >
-                          {branch}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
                 <button
                   type="submit"

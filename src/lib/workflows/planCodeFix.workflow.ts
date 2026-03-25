@@ -178,6 +178,16 @@ export const runPlanCodeFixWorkflow = async (taskId: string) => {
             memoryContent,
         });
 
+        if (recommendation.agentThought) {
+            await taskService.appendAgentMessage({
+                taskId,
+                sender: "code_agent",
+                content: recommendation.agentThought,
+                kind: "thinking",
+                timestamp: Date.now(),
+            });
+        }
+
         await taskService.updateTask(taskId, {
             candidateFiles: recommendation.suspectedFiles,
             componentHints: [recommendation.suspectedComponent],

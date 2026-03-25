@@ -170,6 +170,7 @@ export interface NormalizedFixRecommendation {
   confidence: number;
   securityAuditFaults?: string[];
   complianceChecks?: string[];
+  agentThought?: string;
   sourceArtifactIds: string[];
 }
 

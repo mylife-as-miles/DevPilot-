@@ -116,11 +116,21 @@ export const runExecuteCodeFixWorkflow = async (taskId: string, proposalId: stri
         };
 
         // Generate the code patch
-        const { proposal: generatedProposal, files: patchFiles } = await codeAgentAdapter.proposePatch({
+        const { proposal: generatedProposal, files: patchFiles, agentThought } = await codeAgentAdapter.proposePatch({
             taskId,
             recommendation,
             files,
         });
+
+        if (agentThought) {
+            await taskService.appendAgentMessage({
+                taskId,
+                sender: "code_agent",
+                content: agentThought,
+                kind: "thinking",
+                timestamp: Date.now(),
+            });
+        }
 
         // Update existing proposal by generating the patch files and changing status
         await patchProposalService.updatePatchProposalStatus(proposalId, "ready_for_review");
