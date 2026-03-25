@@ -3,6 +3,7 @@ import { gitlabDuoService } from "../services/gitlabDuo.service";
 import { runService } from "../services/run.service";
 import { gitlabRepositoryAdapter } from "../adapters/gitlabRepository.adapter";
 import { db } from "../db";
+import { GitLabAdapterResult } from "../../types";
 
 export interface RepositoryMutationWorkflowResult {
   branchName: string;
@@ -10,6 +11,12 @@ export interface RepositoryMutationWorkflowResult {
   mergeRequestUrl: string;
   pipelineId: number;
   pipelineUrl: string;
+}
+
+interface PipelineTriggerResult {
+  pipelineId: number;
+  webUrl: string;
+  status: string;
 }
 
 export async function runRepositoryMutationWorkflow(
@@ -217,7 +224,7 @@ export async function runRepositoryMutationWorkflow(
     task.branch || task.defaultBranch
   );
 
-  let pipelineResult;
+  let pipelineResult: GitLabAdapterResult<PipelineTriggerResult>;
   if (ciCheck.success && ciCheck.data === false) {
     // Graceful skip
     await taskService.appendAgentMessage({
@@ -237,6 +244,7 @@ export async function runRepositoryMutationWorkflow(
         webUrl: mrResult.data.webUrl, // Link to MR instead
         status: "skipped",
       },
+      logs: ["[GITLAB] Pipeline trigger skipped: Missing .gitlab-ci.yml configuration in this repository."],
     };
   } else {
     pipelineResult = await gitlabRepositoryAdapter.rerunPipeline(
@@ -256,6 +264,10 @@ export async function runRepositoryMutationWorkflow(
       });
       // Continue anyway
       pipelineResult.data = { pipelineId: 0, webUrl: mrResult.data.webUrl, status: "skipped" };
+      pipelineResult.logs = [
+        ...(Array.isArray(pipelineResult.logs) ? pipelineResult.logs : []),
+        "[GITLAB] Pipeline trigger skipped after GitLab reported a missing CI configuration file.",
+      ];
     } else {
       throw new Error(pipelineResult.error || "Failed to trigger the pipeline.");
     }
@@ -280,7 +292,10 @@ export async function runRepositoryMutationWorkflow(
     status: "completed",
     mode: "live",
     gitlabRef: String(pipelineResult.data.pipelineId),
-    summary: `Triggered pipeline #${pipelineResult.data.pipelineId}`,
+    summary:
+      pipelineResult.data.pipelineId > 0
+        ? `Triggered pipeline #${pipelineResult.data.pipelineId}`
+        : "Skipped pipeline trigger because CI configuration is missing.",
     metadata: JSON.stringify(pipelineResult),
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -302,7 +317,7 @@ export async function runRepositoryMutationWorkflow(
       ...branchResult.logs,
       ...commitResult.logs,
       ...mrResult.logs,
-      ...pipelineResult.logs,
+      ...(Array.isArray(pipelineResult.logs) ? pipelineResult.logs : []),
     ].join("\n"),
   );
   await gitlabDuoService.updateFlowStep(taskId, "monitor_pipeline", "running");

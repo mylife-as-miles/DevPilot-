@@ -69,7 +69,10 @@ export const runVerificationPreparationWorkflow = async (
     await taskService.appendAgentMessage({
       taskId,
       sender: "devpilot",
-      content: `GitLab handoff complete. MR !${mutationResult.mergeRequestIid} and pipeline #${mutationResult.pipelineId} are live. Starting post-fix verification.`,
+      content:
+        mutationResult.pipelineId > 0
+          ? `GitLab handoff complete. MR !${mutationResult.mergeRequestIid} and pipeline #${mutationResult.pipelineId} are live. Starting post-fix verification.`
+          : `GitLab handoff complete. MR !${mutationResult.mergeRequestIid} is live. Verification pipeline was skipped because this repository has no CI configuration. Starting post-fix verification.`,
       kind: "success",
       timestamp: Date.now(),
     });
