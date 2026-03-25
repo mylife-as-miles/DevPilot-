@@ -19,6 +19,21 @@ interface PipelineTriggerResult {
   status: string;
 }
 
+function normalizeLogs(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return typeof value === "string" && value.trim().length > 0 ? [value] : [];
+  }
+
+  return value
+    .filter((entry) => entry !== null && entry !== undefined)
+    .map((entry) => String(entry));
+}
+
+function lastLogOr(value: unknown, fallback: string): string {
+  const logs = normalizeLogs(value);
+  return logs[logs.length - 1] || fallback;
+}
+
 export async function runRepositoryMutationWorkflow(
   taskId: string,
   proposalId: string,
@@ -116,7 +131,7 @@ export async function runRepositoryMutationWorkflow(
     status: "completed",
     mode: "live",
     gitlabRef: branchResult.data.branchName,
-    summary: branchResult.logs[branchResult.logs.length - 1] || "Branch created.",
+    summary: lastLogOr(branchResult.logs, "Branch created."),
     metadata: JSON.stringify(branchResult),
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -152,7 +167,7 @@ export async function runRepositoryMutationWorkflow(
     status: "completed",
     mode: "live",
     gitlabRef: commitResult.data.commitSha,
-    summary: commitResult.logs[commitResult.logs.length - 1] || "Commit pushed.",
+    summary: lastLogOr(commitResult.logs, "Commit pushed."),
     metadata: JSON.stringify(commitResult),
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -244,7 +259,9 @@ export async function runRepositoryMutationWorkflow(
         webUrl: mrResult.data.webUrl, // Link to MR instead
         status: "skipped",
       },
-      logs: ["[GITLAB] Pipeline trigger skipped: Missing .gitlab-ci.yml configuration in this repository."],
+      logs: normalizeLogs(ciCheck.logs).concat(
+        "[GITLAB] Pipeline trigger skipped: Missing .gitlab-ci.yml configuration in this repository.",
+      ),
     };
   } else {
     pipelineResult = await gitlabRepositoryAdapter.rerunPipeline(
@@ -265,7 +282,7 @@ export async function runRepositoryMutationWorkflow(
       // Continue anyway
       pipelineResult.data = { pipelineId: 0, webUrl: mrResult.data.webUrl, status: "skipped" };
       pipelineResult.logs = [
-        ...(Array.isArray(pipelineResult.logs) ? pipelineResult.logs : []),
+        ...normalizeLogs(pipelineResult.logs),
         "[GITLAB] Pipeline trigger skipped after GitLab reported a missing CI configuration file.",
       ];
     } else {
@@ -314,10 +331,10 @@ export async function runRepositoryMutationWorkflow(
     taskId,
     "log",
     [
-      ...branchResult.logs,
-      ...commitResult.logs,
-      ...mrResult.logs,
-      ...(Array.isArray(pipelineResult.logs) ? pipelineResult.logs : []),
+      ...normalizeLogs(branchResult.logs),
+      ...normalizeLogs(commitResult.logs),
+      ...normalizeLogs(mrResult.logs),
+      ...normalizeLogs(pipelineResult.logs),
     ].join("\n"),
   );
   await gitlabDuoService.updateFlowStep(taskId, "monitor_pipeline", "running");

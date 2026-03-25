@@ -63,12 +63,31 @@ function projectPath(projectId?: string | number): string {
   return `${apiBase()}/projects/${encodeURIComponent(finalId)}`;
 }
 
-function fail<T>(message: string, logs: string[]): GitLabAdapterResult<T> {
+function normalizeLogs(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return typeof value === "string" && value.trim().length > 0 ? [value] : [];
+  }
+
+  return value
+    .filter((entry) => entry !== null && entry !== undefined)
+    .map((entry) => String(entry));
+}
+
+function ok<T>(data: T, logs: unknown): GitLabAdapterResult<T> {
+  return {
+    success: true,
+    mode: "live",
+    data,
+    logs: normalizeLogs(logs),
+  };
+}
+
+function fail<T>(message: string, logs: unknown): GitLabAdapterResult<T> {
   return {
     success: false,
     mode: "live",
     error: message,
-    logs,
+    logs: normalizeLogs(logs),
   };
 }
 
@@ -165,10 +184,8 @@ export const gitlabRepositoryAdapter = {
         web_url: string;
       }>("/projects?membership=true&min_access_level=30&archived=false&simple=true");
 
-      return {
-        success: true,
-        mode: "live",
-        data: data.map((d) => ({
+      return ok(
+        data.map((d) => ({
           id: d.id,
           name: d.name,
           pathWithNamespace: d.path_with_namespace,
@@ -176,7 +193,7 @@ export const gitlabRepositoryAdapter = {
           webUrl: d.web_url,
         })),
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Project listing failed: ${message}`);
@@ -201,10 +218,8 @@ export const gitlabRepositoryAdapter = {
         web_url: string;
       }>(p("", projectId), { method: "GET" });
 
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           id: data.id,
           name: data.name,
           pathWithNamespace: data.path_with_namespace,
@@ -212,7 +227,7 @@ export const gitlabRepositoryAdapter = {
           webUrl: data.web_url,
         },
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Project fetch failed: ${message}`);
@@ -236,17 +251,15 @@ export const gitlabRepositoryAdapter = {
         protected: boolean;
       }>(p("/repository/branches", projectId));
 
-      return {
-        success: true,
-        mode: "live",
-        data: data.map((branch) => ({
+      return ok(
+        data.map((branch) => ({
           name: branch.name,
           isDefault: branch.default,
           merged: branch.merged,
           protected: branch.protected,
         })),
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Branch listing failed: ${message}`);
@@ -272,12 +285,7 @@ export const gitlabRepositoryAdapter = {
         p(`/repository/tree?recursive=true&ref=${encodeURIComponent(ref)}${encodedPath}`, projectId),
       );
 
-      return {
-        success: true,
-        mode: "live",
-        data,
-        logs,
-      };
+      return ok(data, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Repository tree listing failed: ${message}`);
@@ -305,16 +313,14 @@ export const gitlabRepositoryAdapter = {
         p(`/repository/files/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(ref)}`, projectId),
       );
 
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           filePath: data.file_path,
           content: decodeBase64(data.content),
           ref,
         },
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] File fetch failed: ${message}`);
@@ -343,12 +349,7 @@ export const gitlabRepositoryAdapter = {
         },
       );
       logs.push(`[GITLAB] Branch "${data.name}" created successfully.`);
-      return {
-        success: true,
-        mode: "live",
-        data: { branchName: data.name, ref: data.commit?.id },
-        logs,
-      };
+      return ok({ branchName: data.name, ref: data.commit?.id }, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Branch creation failed: ${message}`);
@@ -388,12 +389,7 @@ export const gitlabRepositoryAdapter = {
         }),
       });
       logs.push(`[GITLAB] Commit ${data.id.slice(0, 8)} pushed.`);
-      return {
-        success: true,
-        mode: "live",
-        data: { commitSha: data.id, branchName },
-        logs,
-      };
+      return ok({ commitSha: data.id, branchName }, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Commit failed: ${message}`);
@@ -434,10 +430,8 @@ export const gitlabRepositoryAdapter = {
         }),
       });
       logs.push(`[GITLAB] MR !${data.iid} created: ${data.web_url}`);
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           mergeRequestIid: data.iid,
           webUrl: data.web_url,
           title: data.title,
@@ -445,7 +439,7 @@ export const gitlabRepositoryAdapter = {
           targetBranch: data.target_branch,
         },
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] MR creation failed: ${message}`);
@@ -474,12 +468,7 @@ export const gitlabRepositoryAdapter = {
         },
       );
       logs.push(`[GITLAB] Comment posted (note ${data.id}).`);
-      return {
-        success: true,
-        mode: "live",
-        data: { noteId: data.id },
-        logs,
-      };
+      return ok({ noteId: data.id }, logs);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Comment failed: ${message}`);
@@ -509,21 +498,11 @@ export const gitlabRepositoryAdapter = {
 
       const exists = !!data;
       logs.push(`[GITLAB] CI config exists: ${exists}`);
-      return {
-        success: true,
-        mode: "live",
-        data: exists,
-        logs,
-      };
+      return ok(exists, logs);
     } catch (error) {
       // If 404, it means it doesn't exist
       logs.push(`[GITLAB] CI config check returned error or 404.`);
-      return {
-        success: true,
-        mode: "live",
-        data: false,
-        logs,
-      };
+      return ok(false, logs);
     }
   },
 
@@ -545,28 +524,21 @@ export const gitlabRepositoryAdapter = {
         body: JSON.stringify({ ref }),
       });
       logs.push(`[GITLAB] Pipeline #${data.id} triggered (${data.status}).`);
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           pipelineId: data.id,
           webUrl: data.web_url,
           status: data.status,
         },
         logs,
-      };
+      );
     } catch (error: any) {
       const message = error instanceof Error ? error.message : String(error);
 
       // Explicitly check for missing CI config file error
       if (message.includes("Missing CI config file")) {
         logs.push(`[GITLAB] Pipeline trigger skipped: Missing CI config file.`);
-        return {
-          success: false,
-          mode: "live",
-          error: "MISSING_CI_CONFIG",
-          logs,
-        };
+        return fail("MISSING_CI_CONFIG", logs);
       }
 
       logs.push(`[GITLAB] Pipeline trigger failed: ${message}`);
@@ -594,10 +566,8 @@ export const gitlabRepositoryAdapter = {
         approved_by?: { user: { username: string } }[];
       }>(p(`/merge_requests/${mergeRequestIid}`, projectId));
 
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           status: data.state,
           mergeRequestIid: data.iid,
           webUrl: data.web_url,
@@ -605,7 +575,7 @@ export const gitlabRepositoryAdapter = {
           approvedBy: data.approved_by?.map((item) => item.user.username),
         },
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] MR status fetch failed: ${message}`);
@@ -633,10 +603,8 @@ export const gitlabRepositoryAdapter = {
         finished_at?: string;
       }>(p(`/pipelines/${pipelineId}`, projectId));
 
-      return {
-        success: true,
-        mode: "live",
-        data: {
+      return ok(
+        {
           pipelineId: data.id,
           status: data.status,
           ref: data.ref,
@@ -644,7 +612,7 @@ export const gitlabRepositoryAdapter = {
           finishedAt: data.finished_at ?? undefined,
         },
         logs,
-      };
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logs.push(`[GITLAB] Pipeline fetch failed: ${message}`);

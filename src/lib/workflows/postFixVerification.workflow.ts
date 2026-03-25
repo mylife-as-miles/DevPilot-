@@ -56,11 +56,7 @@ export async function runPostFixVerificationWorkflow(
   if (!task || !run) {
     return;
   }
-
-  const targetUrl = task.targetUrl;
-  if (!targetUrl) {
-    throw new Error("Task is missing a target URL for verification.");
-  }
+  const serverId = `verify-server-${taskId}`;
 
   const plan = await patchProposalService.getVerificationPlanForTask(taskId);
   if (!plan) {
@@ -160,22 +156,56 @@ export async function runPostFixVerificationWorkflow(
     await runService.updateRunStepStatus(
       stepRecords[1],
       "running",
-      "Launching verification sandbox session...",
+      "Preparing the GitLab fix branch inside the sandbox...",
     );
     await taskService.appendAgentMessage({
       taskId,
       sender: "system",
-      content: "Opening the updated application in the sandbox for verification.",
+      content: "Opening the updated GitLab fix branch in the sandbox for verification.",
       kind: "thinking",
       timestamp: Date.now(),
     });
 
+    const { config } = await import("../config/env");
+    const gitlabUrl = task.gitlabProjectWebUrl
+      || (task.repo.startsWith("http") ? task.repo : `${config.gitlabUrl}/${task.repo}`);
+    if (!gitlabUrl) {
+      throw new Error("Task is missing a GitLab repository URL for sandbox verification.");
+    }
+
+    const bootstrapMetadata = await sandboxAdapter.setupWorkspace(
+      gitlabUrl,
+      task.branch,
+      config.gitlabToken,
+    );
+    const runtimeCommand =
+      bootstrapMetadata.devCommandUsed ||
+      bootstrapMetadata.previewCommandUsed ||
+      "npm run dev";
+    const runtimeTargetUrl = bootstrapMetadata.runtimeTargetUrl;
+
+    await sandboxAdapter.executeCommand("npm install");
+    const buildResult = await sandboxAdapter.executeCommand("npm run build");
+    if (buildResult.exitCode !== 0) {
+      throw new Error(`Verification build failed: ${buildResult.stderr}`);
+    }
+
+    await sandboxAdapter.startBackgroundCommand(serverId, runtimeCommand);
+    const readiness = await sandboxAdapter.waitForUrl(runtimeTargetUrl, 60000, 2000);
+    if (!readiness.ready) {
+      await sandboxAdapter.stopBackgroundCommand(serverId);
+      throw new Error(
+        `Verification runtime at ${runtimeTargetUrl} did not become ready after 60s. ` +
+        `Last error: ${readiness.lastError || "unknown"}`,
+      );
+    }
+
     await sandboxAdapter.createSession({
       id: taskId,
-      targetUrl,
+      targetUrl: runtimeTargetUrl,
       viewport,
     });
-    await completeStep(1, `Sandbox launched at ${targetUrl}.`);
+    await completeStep(1, `Sandbox launched at ${runtimeTargetUrl}.`);
 
     await runService.updateRunStepStatus(
       stepRecords[2],
@@ -441,6 +471,7 @@ export async function runPostFixVerificationWorkflow(
       "failed",
     );
   } finally {
+    await sandboxAdapter.stopBackgroundCommand(serverId).catch(() => { });
     await sandboxAdapter.closeSession(taskId);
   }
 }
