@@ -105,7 +105,6 @@ export default function App() {
         path="/task/:taskId"
         element={
           <div className="min-h-screen bg-background-dark font-display text-slate-100 selection:bg-primary/30">
-            <Header />
             <TaskDetailRoute projects={[projectPath]} branches={branchNames} />
           </div>
         }
