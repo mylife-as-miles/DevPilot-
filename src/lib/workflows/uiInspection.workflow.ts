@@ -15,6 +15,8 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
   }
 
   const targetUrl = task.targetUrl;
+  const serverId = `server-${taskId}`;
+
   if (!targetUrl) {
     throw new Error("Task is missing a target URL for inspection.");
   }
@@ -108,11 +110,38 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
 
     await completeStep(0, "Application built successfully.");
 
+    // 2. Start the server (using 'npm run dev' or 'npm run preview')
+    await sandboxAdapter.startBackgroundCommand(serverId, "npm run dev");
+
+
+    // 3. Poll for readiness
+    let isReady = false;
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    while (!isReady && attempts < maxAttempts) {
+      try {
+        const response = await fetch(targetUrl, { mode: 'no-cors' });
+        if (response.type === 'opaque' || response.ok) {
+          isReady = true;
+        }
+      } catch {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    if (!isReady) {
+      await sandboxAdapter.stopBackgroundCommand(serverId);
+      throw new Error(`Server at ${targetUrl} did not become ready after 60s.`);
+    }
+
     await runService.updateRunStepStatus(
       stepRecords[1],
       "running",
-      "Launching sandbox session with local server...",
+      "Launching sandbox session...",
     );
+
 
     // TODO: Determine if we need to start a server or use existing
     // For now we assume the environment handles the serving or we start it here
@@ -226,9 +255,15 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       kind: "success",
       timestamp: Date.now(),
     });
+
+    // Clean up server
+    await sandboxAdapter.stopBackgroundCommand(serverId);
+
+
     await sandboxAdapter.closeSession(taskId);
     await runPlanCodeFixWorkflow(taskId);
   } catch (error) {
+
     const message = error instanceof Error ? error.message : String(error);
     await taskService.updateTask(taskId, { inspectionStatus: "failed" });
     await runService.createAgentEvent({
@@ -247,6 +282,12 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       kind: "warning",
       timestamp: Date.now(),
     });
+
+    // Clean up server
+    await sandboxAdapter.stopBackgroundCommand(serverId).catch(() => { });
+
+
     await sandboxAdapter.closeSession(taskId);
   }
 };
+
