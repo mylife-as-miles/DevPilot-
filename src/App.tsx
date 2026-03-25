@@ -104,7 +104,24 @@ export default function App() {
           </div>
         }
       />
-      <Route path="/task/:taskId" element={<TaskDetailRoute projects={[projectPath]} branches={branchNames} />} />
+      <Route
+        path="/task/:taskId"
+        element={
+          <div className="min-h-screen bg-background-dark font-display text-slate-100 selection:bg-primary/30">
+            <Header
+              projectLabel={integrationState.project?.name || "Select Project"}
+              projectPath={projectPath}
+              branches={branchNames}
+              selectedBranch={selectedBranch}
+              onBranchChange={setSelectedBranch}
+              availableProjects={integrationState.availableProjects}
+              onProjectChange={handleProjectChange}
+              disabled={!integrationState.ready}
+            />
+            <TaskDetailRoute projects={[projectPath]} branches={branchNames} />
+          </div>
+        }
+      />
       <Route path="/documentation" element={<Documentation onBack={() => navigate("/")} />} />
       <Route path="/changelog" element={<Changelog onBack={() => navigate("/")} />} />
       <Route
