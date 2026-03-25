@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="1200" height="475" alt="DevPilot Enterprise Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img width="1200" height="475" alt="DevPilot Enterprise Banner" src="file_000000004094720aa3dbb97627a77e26.png" />
   <h1>🚀 DevPilot: Enterprise-Grade AI Automation</h1>
   <p><i>The intelligent orchestration layer for modern development workflows.</i></p>
   
