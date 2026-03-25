@@ -16,7 +16,7 @@ export interface Task {
   viewportHeight?: number;
   lastInspectionAt?: number;
   inspectionStatus?: "idle" | "queued" | "running" | "completed" | "failed";
-  codeFixStatus?: "idle" | "running" | "ready_for_review" | "approved" | "applied" | "failed";
+  codeFixStatus?: "idle" | "running" | "waiting_for_plan_approval" | "ready_for_review" | "approved" | "applied" | "failed";
   repoName?: string;
   repoPath?: string;
   defaultBranch?: string;
@@ -129,6 +129,8 @@ export interface PatchProposal {
   recommendedStrategy: string;
   explanation: string;
   confidence: number;
+  securityAuditFaults?: string[];
+  complianceChecks?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -166,6 +168,8 @@ export interface NormalizedFixRecommendation {
   evidence: string[];
   tags: string[];
   confidence: number;
+  securityAuditFaults?: string[];
+  complianceChecks?: string[];
   sourceArtifactIds: string[];
 }
 

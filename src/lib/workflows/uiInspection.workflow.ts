@@ -5,7 +5,7 @@ import { visionAnalysisAdapter } from "../adapters/visionAnalysis.adapter";
 import { taskService } from "../services";
 import { memoryService } from "../services/memory.service";
 import { runService } from "../services/run.service";
-import { runCodeFixWorkflow } from "./codeFix.workflow";
+import { runPlanCodeFixWorkflow } from "./planCodeFix.workflow";
 
 export const runUiInspectionWorkflow = async (taskId: string) => {
   const task = await taskService.getTaskById(taskId);
@@ -198,7 +198,7 @@ export const runUiInspectionWorkflow = async (taskId: string) => {
       timestamp: Date.now(),
     });
     await sandboxAdapter.closeSession(taskId);
-    await runCodeFixWorkflow(taskId);
+    await runPlanCodeFixWorkflow(taskId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await taskService.updateTask(taskId, { inspectionStatus: "failed" });

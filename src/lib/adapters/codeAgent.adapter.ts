@@ -52,8 +52,10 @@ export const codeAgentAdapter = {
   ): Promise<NormalizedFixRecommendation> {
     const ai = getAiClient();
     const prompt = `
-You are a senior code-fix agent.
+You are a senior code-fix agent, security auditor, and compliance expert.
 Given a UI issue analysis and repository tree, determine the most likely files and the fix strategy.
+Additionally, you MUST proactively perform a Security Audit and Compliance Check on the provided context before returning your plan.
+Identify any security vulnerabilities (e.g., OWASP, XSS, injection) and compliance issues (e.g., accessibility, privacy, architecture standards).
 
 Task Title: ${input.taskTitle}
 Task Prompt: ${input.taskPrompt || "None"}
@@ -79,6 +81,8 @@ Respond with valid JSON only:
   "recommendedFix": "string",
   "evidence": ["string"],
   "tags": ["string"],
+  "securityAuditFaults": ["list of security vulnerabilities found, or empty if none"],
+  "complianceChecks": ["list of compliance issues found, or empty if none"],
   "confidence": number
 }
 `.trim();
@@ -113,6 +117,8 @@ Respond with valid JSON only:
       recommendedFix: parsed.recommendedFix,
       evidence: parsed.evidence,
       tags: parsed.tags,
+      securityAuditFaults: parsed.securityAuditFaults || [],
+      complianceChecks: parsed.complianceChecks || [],
       confidence: parsed.confidence,
       sourceArtifactIds: [],
     };
